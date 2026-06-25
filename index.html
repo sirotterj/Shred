@@ -183,8 +183,8 @@
 <script>
 const CONFIG = {
   totalDays: 25,
-  totalDeficit: 18750,
-  dailyTarget: 750,
+  totalDeficit: 20000,
+  dailyTarget: 800,
 };
 
 let state = { logs: [] };
@@ -268,8 +268,19 @@ function toast(msg) {
 }
 
 const PALETTE = ["#C96442", "#D97757", "#B5882B", "#5A8A3A", "#4A6FA5", "#7B5BA8", "#B8466B"];
-const GOLD = ["#F4C430", "#FFD700", "#E6B325", "#FFC857"];
-const FIRE = ["#FF3B30", "#FF6B1A", "#FF9500", "#FFCC00"];
+const GOLD = ["#E8B33C", "#F4C430", "#FFD700", "#C99A2E"];
+const FIRE = ["#FF3B30", "#FF6B1A", "#FF9500", "#FFD43B"];
+const ROSE = ["#FF6B9D", "#C44569", "#FFB3C6", "#E84D8A"];
+
+// ─── EASING ───
+const Ease = {
+  outCubic:   t => 1 - Math.pow(1 - t, 3),
+  outQuint:   t => 1 - Math.pow(1 - t, 5),
+  inCubic:    t => t * t * t,
+  inOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  outBack:    t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); },
+  outElastic: t => { if (t === 0 || t === 1) return t; const c4 = (2 * Math.PI) / 3; return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1; },
+};
 
 // ─── CANVAS FX ENGINE ───
 const FX = (() => {
@@ -304,62 +315,133 @@ const FX = (() => {
     p.size = p.size ?? 4; p.color = p.color ?? "#C96442";
     p.shape = p.shape ?? "circle";
     p.alpha = p.alpha ?? 1;
-    p.composite = p.composite ?? "lighter";
+    p.composite = p.composite ?? "source-over";
+    p.glow = p.glow ?? 0;
     if (p.trail) p.trailPts = [];
     particles.push(p);
   }
-  function drawStar(r, points = 5) {
+
+  function drawStar(r, points = 5, inner = 0.42) {
     ctx.beginPath();
     for (let i = 0; i < points * 2; i++) {
       const ang = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
-      const rr = i % 2 === 0 ? r : r * 0.42;
+      const rr = i % 2 === 0 ? r : r * inner;
       const x = Math.cos(ang) * rr, y = Math.sin(ang) * rr;
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.closePath(); ctx.fill();
   }
+
+  function drawHeart(r) {
+    ctx.beginPath();
+    const s = r * 0.9;
+    ctx.moveTo(0, s * 0.3);
+    ctx.bezierCurveTo(s, -s * 0.5, s * 1.1, -s * 1.3, 0, -s * 0.5);
+    ctx.bezierCurveTo(-s * 1.1, -s * 1.3, -s, -s * 0.5, 0, s * 0.3);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawPetal(r) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(r * 0.5, -r * 0.5, r * 0.5, -r * 1.4, 0, -r * 1.6);
+    ctx.bezierCurveTo(-r * 0.5, -r * 1.4, -r * 0.5, -r * 0.5, 0, 0);
+    ctx.fill();
+  }
+
+  function drawBezierTrail(pts, color, baseW, baseAlpha) {
+    if (pts.length < 2) return;
+    for (let i = pts.length - 1; i >= 1; i--) {
+      const t = i / pts.length;
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = baseAlpha * (1 - t);
+      ctx.lineWidth = baseW * (1 - t * 0.6);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      const p0 = pts[i - 1], p1 = pts[i];
+      const mid = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+      ctx.moveTo(p1.x, p1.y);
+      ctx.quadraticCurveTo(p1.x, p1.y, mid.x, mid.y);
+      ctx.stroke();
+    }
+  }
+
   function drawParticle(p) {
     const a = Math.max(0, p.life / p.maxLife);
     ctx.globalCompositeOperation = p.composite;
-    if (p.trail && p.trailPts.length > 1) {
-      ctx.strokeStyle = p.color;
-      ctx.globalAlpha = a * 0.45;
-      ctx.lineWidth = p.size * 0.7;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(p.trailPts[0].x, p.trailPts[0].y);
-      for (let i = 1; i < p.trailPts.length; i++) ctx.lineTo(p.trailPts[i].x, p.trailPts[i].y);
-      ctx.stroke();
+
+    // soft glow halo
+    if (p.glow > 0 && p.shape !== "ring" && p.shape !== "rect-bar") {
+      ctx.globalAlpha = a * p.alpha * 0.35;
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * p.glow);
+      g.addColorStop(0, p.color);
+      g.addColorStop(0.5, p.color + "55");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.glow, 0, Math.PI * 2); ctx.fill();
     }
+
+    if (p.trail && p.trailPts.length > 1) {
+      drawBezierTrail(p.trailPts, p.color, p.size * 1.3, a * 0.55);
+    }
+
     ctx.globalAlpha = a * p.alpha;
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.rot);
     ctx.fillStyle = p.color;
+
     if (p.shape === "circle") {
       ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2); ctx.fill();
     } else if (p.shape === "rect") {
       ctx.fillRect(-p.size / 2, -p.size * 0.7, p.size, p.size * 1.4);
     } else if (p.shape === "star") {
-      drawStar(p.size, p.points || 5);
+      drawStar(p.size, p.points || 5, p.inner || 0.42);
+    } else if (p.shape === "heart") {
+      drawHeart(p.size);
+    } else if (p.shape === "petal") {
+      drawPetal(p.size);
     } else if (p.shape === "spark") {
       const speed = Math.hypot(p.vx, p.vy) || 1;
-      const len = Math.min(p.size * 5, speed * 0.04 + 6);
+      const len = Math.min(p.size * 6, speed * 0.05 + 8);
       ctx.rotate(Math.atan2(p.vy, p.vx) - p.rot);
+      const grad = ctx.createLinearGradient(-len / 2, 0, len / 2, 0);
+      grad.addColorStop(0, "rgba(255,255,255,0)");
+      grad.addColorStop(0.5, p.color);
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = grad;
       ctx.fillRect(-len / 2, -p.size / 2, len, p.size);
     } else if (p.shape === "ring") {
       ctx.strokeStyle = p.color;
       ctx.lineWidth = p.lineW || 2;
       ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2); ctx.stroke();
     } else if (p.shape === "flame") {
-      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size);
-      g.addColorStop(0, p.color);
-      g.addColorStop(0.55, p.color2 || p.color);
-      g.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = g;
+      const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size);
+      grad.addColorStop(0, "#fff");
+      grad.addColorStop(0.25, p.color);
+      grad.addColorStop(0.7, (p.color2 || p.color) + "88");
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = grad;
       ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2); ctx.fill();
+    } else if (p.shape === "coin") {
+      // 3D-ish coin: ellipse with squeeze on x for rotation illusion
+      const squeeze = Math.abs(Math.cos(p.spinPhase || 0));
+      ctx.beginPath();
+      ctx.ellipse(0, 0, p.size * Math.max(0.12, squeeze), p.size, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.beginPath();
+      ctx.ellipse(0, p.size * 0.15, p.size * Math.max(0.1, squeeze * 0.8), p.size * 0.85, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // rim highlight
+      ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, p.size * Math.max(0.12, squeeze), p.size, 0, 0, Math.PI * 2);
+      ctx.stroke();
     } else if (p.shape === "text") {
-      ctx.font = `${p.weight || 700} ${p.size}px Inter, sans-serif`;
+      ctx.font = `${p.weight || 800} ${p.size}px Inter, sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       if (p.stroke) {
         ctx.strokeStyle = p.stroke;
@@ -367,15 +449,24 @@ const FX = (() => {
         ctx.strokeText(p.text, 0, 0);
       }
       ctx.fillText(p.text, 0, 0);
-    } else if (p.shape === "petal") {
+    } else if (p.shape === "ray") {
+      // long thin gradient beam from origin
+      const len = p.size;
+      const grad = ctx.createLinearGradient(0, 0, len, 0);
+      grad.addColorStop(0, p.color);
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, -(p.lineW || 4) / 2, len, p.lineW || 4);
+    } else if (p.shape === "leaf") {
       ctx.beginPath();
-      ctx.ellipse(0, -p.size, p.size * 0.5, p.size, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, p.size, p.size * 0.45, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
   }
+
   function tick(t) {
     if (!lastT) lastT = t;
     const dt = Math.min(0.04, (t - lastT) / 1000);
@@ -393,7 +484,7 @@ const FX = (() => {
       p.rot += p.vrot * dt;
       if (p.trail) {
         p.trailPts.unshift({ x: p.x, y: p.y });
-        if (p.trailPts.length > (p.trailMax || 8)) p.trailPts.pop();
+        if (p.trailPts.length > (p.trailMax || 10)) p.trailPts.pop();
       }
       drawParticle(p);
       return true;
@@ -409,12 +500,37 @@ const FX = (() => {
   return { spawn, start, ensure, get W() { return W; }, get H() { return H; } };
 })();
 
+// ─── ATMOSPHERE & FLASHES ───
 function flash(color = "rgba(255,255,255,0.7)", duration = 450) {
   const el = document.createElement("div");
-  el.style.cssText = `position:fixed;inset:0;background:${color};pointer-events:none;z-index:155;opacity:1;transition:opacity ${duration}ms ease-out`;
+  el.style.cssText = `position:fixed;inset:0;background:${color};pointer-events:none;z-index:155;opacity:1;transition:opacity ${duration}ms cubic-bezier(0.22,1,0.36,1)`;
   document.body.appendChild(el);
   requestAnimationFrame(() => { el.style.opacity = "0"; });
   setTimeout(() => el.remove(), duration + 100);
+}
+
+function ambient(color, opacity = 0.3, fadeIn = 400, hold = 1500, fadeOut = 600) {
+  const el = document.createElement("div");
+  el.style.cssText = `position:fixed;inset:0;background:${color};pointer-events:none;z-index:148;opacity:0;transition:opacity ${fadeIn}ms ease-out`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => { el.style.opacity = String(opacity); });
+  setTimeout(() => {
+    el.style.transition = `opacity ${fadeOut}ms ease-in`;
+    el.style.opacity = "0";
+  }, fadeIn + hold);
+  setTimeout(() => el.remove(), fadeIn + hold + fadeOut + 50);
+}
+
+function vignette(opacity = 0.4, duration = 2000) {
+  const el = document.createElement("div");
+  el.style.cssText = `position:fixed;inset:0;background:radial-gradient(circle at 50% 40%, transparent 30%, rgba(0,0,0,${opacity}) 100%);pointer-events:none;z-index:149;opacity:0;transition:opacity 600ms ease-out`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => { el.style.opacity = "1"; });
+  setTimeout(() => {
+    el.style.transition = "opacity 800ms ease-in";
+    el.style.opacity = "0";
+  }, duration);
+  setTimeout(() => el.remove(), duration + 900);
 }
 
 function shake(intensity = 8, duration = 500) {
@@ -441,836 +557,1122 @@ function domLayer(durationMs = 2500) {
 }
 
 // Procedural fractal lightning bolt
-function lightningBolt(x1, y1, x2, y2, displace, ctx, segs) {
+function lightningBolt(x1, y1, x2, y2, displace, segs) {
   if (displace < 4) {
     segs.push([x1, y1, x2, y2]);
     return;
   }
   const mx = (x1 + x2) / 2 + (Math.random() - 0.5) * displace;
   const my = (y1 + y2) / 2 + (Math.random() - 0.5) * displace;
-  lightningBolt(x1, y1, mx, my, displace / 2, ctx, segs);
-  lightningBolt(mx, my, x2, y2, displace / 2, ctx, segs);
-  if (Math.random() < 0.35 && displace > 16) {
-    const bx = mx + (Math.random() - 0.5) * displace * 1.2;
-    const by = my + Math.random() * displace * 0.8;
-    lightningBolt(mx, my, bx, by, displace / 3, ctx, segs);
+  lightningBolt(x1, y1, mx, my, displace / 2, segs);
+  lightningBolt(mx, my, x2, y2, displace / 2, segs);
+  if (Math.random() < 0.3 && displace > 18) {
+    const bx = mx + (Math.random() - 0.5) * displace * 1.4;
+    const by = my + Math.random() * displace * 0.7;
+    lightningBolt(mx, my, bx, by, displace / 3, segs);
   }
 }
 
-// Multi-stage firework helper
+// ─── CINEMATIC FIREWORK ───
 function firework(x, y, opts = {}) {
   const colors = opts.colors || PALETTE;
-  const n = opts.n || 70;
-  // initial flash
-  FX.spawn({ x, y, life: 0.35, size: 50, color: "rgba(255,255,255,0.9)", shape: "circle", composite: "lighter" });
-  FX.spawn({ x, y, life: 0.6, size: 90, color: colors[0], shape: "circle", composite: "lighter", alpha: 0.4 });
-  // peony ring
+  const n = opts.n || 80;
+  // initial bright flash + soft halo
+  FX.spawn({ x, y, life: 0.25, size: 28, color: "#fff", shape: "circle", glow: 4, composite: "lighter" });
+  FX.spawn({ x, y, life: 0.5, size: 60, color: colors[0], shape: "circle", alpha: 0.3, glow: 3, composite: "lighter" });
+  // peony ring with trails
   for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + Math.random() * 0.05;
-    const sp = 220 + Math.random() * 200;
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.08;
+    const sp = 240 + Math.random() * 220;
     FX.spawn({
       x, y,
       vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-      gravity: 320, drag: 0.025,
-      life: 1.4 + Math.random() * 0.6,
+      gravity: 340, drag: 0.025,
+      life: 1.5 + Math.random() * 0.7,
       size: 2.5 + Math.random() * 1.5,
       color: colors[i % colors.length],
-      shape: "circle", trail: true, trailMax: 7,
+      shape: "circle", trail: true, trailMax: 10,
+      glow: 2.5, composite: "lighter",
     });
   }
-  // sparkle drift
+  // delayed glitter rain
   setTimeout(() => {
     for (let i = 0; i < n / 2; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = 30 + Math.random() * 80;
       FX.spawn({
-        x: x + Math.cos(a) * 60, y: y + Math.sin(a) * 60,
-        vx: Math.cos(a) * sp * 0.3, vy: 30 + Math.random() * 40,
-        gravity: 80, drag: 0.04,
+        x: x + Math.cos(a) * 80, y: y + Math.sin(a) * 80,
+        vx: (Math.random() - 0.5) * 60, vy: 40 + Math.random() * 60,
+        gravity: 100, drag: 0.04,
         life: 1.4 + Math.random() * 0.6,
-        size: 1.5,
-        color: colors[i % colors.length],
-        shape: "circle",
+        size: 1.8, color: colors[i % colors.length],
+        shape: "circle", glow: 2, composite: "lighter",
       });
     }
-  }, 500);
+  }, 550);
 }
 
-// 20 SURPRISES — one per day, each ~2s, multi-stage and choreographed
+// 20 SURPRISES — polished, multi-stage, choreographed
 const SURPRISES = [
-  // 1: LIFTOFF — rocket trail, apex burst, secondary fireworks
+  // 1: LIFTOFF — countdown, glowing afterburner trail, apex multi-firework
   () => {
-    FX.start(4500);
+    FX.start(5500);
+    ambient("rgba(20,10,30,1)", 0.18, 200, 3500, 1200);
     const W = FX.W, H = FX.H;
-    const sx = W / 2, sy = H * 0.95, ay = H * 0.25;
-    const T = 1400, t0 = performance.now();
-    function fly(t) {
-      const e = Math.min(1, (t - t0) / T);
-      const ee = e * e;
-      const x = sx, y = sy + (ay - sy) * ee;
-      // exhaust plume
-      for (let i = 0; i < 4; i++) {
+    const sx = W / 2, sy = H * 0.95, ay = H * 0.22;
+    const dom = domLayer(5500);
+
+    // countdown
+    ["3", "2", "1"].forEach((n, i) => {
+      setTimeout(() => {
+        const el = document.createElement("div");
+        el.textContent = n;
+        el.style.cssText = `position:absolute;left:50%;top:38%;transform:translate(-50%,-50%) scale(0.3);font-size:140px;font-weight:900;color:#fff;text-shadow:0 0 40px rgba(255,180,80,0.8);transition:transform 0.4s cubic-bezier(0.22,1,0.36,1), opacity 0.4s;opacity:0`;
+        dom.appendChild(el);
+        requestAnimationFrame(() => { el.style.opacity = "1"; el.style.transform = "translate(-50%,-50%) scale(1)"; });
+        setTimeout(() => { el.style.opacity = "0"; el.style.transform = "translate(-50%,-50%) scale(1.4)"; }, 350);
+      }, i * 450);
+    });
+
+    setTimeout(() => {
+      const T = 1300, t0 = performance.now();
+      function fly(t) {
+        const e = Math.min(1, (t - t0) / T);
+        const ee = Ease.inCubic(e);
+        const x = sx, y = sy + (ay - sy) * ee;
+        // afterburner
+        for (let i = 0; i < 5; i++) {
+          FX.spawn({
+            x: x + (Math.random() - 0.5) * 16, y: y + 18,
+            vx: (Math.random() - 0.5) * 70, vy: 100 + Math.random() * 120,
+            drag: 0.05, life: 0.8 + Math.random() * 0.3,
+            size: 14 + Math.random() * 14,
+            color: FIRE[Math.floor(Math.random() * FIRE.length)],
+            color2: "#FFB347", shape: "flame",
+            composite: "lighter",
+          });
+        }
+        // bright rocket nose with trail
         FX.spawn({
-          x: x + (Math.random() - 0.5) * 14,
-          y: y + 18,
-          vx: (Math.random() - 0.5) * 70,
-          vy: 80 + Math.random() * 100,
-          drag: 0.06, life: 0.9 + Math.random() * 0.4,
-          size: 6 + Math.random() * 10,
-          color: FIRE[Math.floor(Math.random() * FIRE.length)],
-          color2: "rgba(255,200,100,0.5)",
-          shape: "flame",
+          x, y, life: 0.4, size: 6,
+          color: "#fff", shape: "circle", glow: 4,
+          trail: true, trailMax: 14,
+          composite: "lighter",
         });
+        // sparks shedding
+        if (Math.random() < 0.6) {
+          FX.spawn({
+            x, y, vx: (Math.random() - 0.5) * 200, vy: 80 + Math.random() * 120,
+            gravity: 200, drag: 0.04, life: 1.2,
+            size: 2, color: "#FFD43B", shape: "spark", composite: "lighter",
+          });
+        }
+        if (e < 1) requestAnimationFrame(fly);
+        else {
+          flash("rgba(255,240,200,0.6)", 350);
+          firework(sx, ay, { n: 110, colors: GOLD });
+          setTimeout(() => firework(sx - 130, ay + 80, { n: 70, colors: PALETTE }), 300);
+          setTimeout(() => firework(sx + 130, ay + 80, { n: 70, colors: ROSE }), 500);
+          setTimeout(() => firework(sx, ay + 140, { n: 50, colors: ["#fff", "#FFE66D"] }), 800);
+        }
       }
-      // rocket nose
-      FX.spawn({
-        x, y, life: 0.06, size: 6, color: "#fff", shape: "circle",
-      });
-      FX.spawn({
-        x, y, life: 0.12, size: 12, color: "rgba(255,200,100,0.6)", shape: "circle",
-      });
-      if (e < 1) requestAnimationFrame(fly);
-      else {
-        flash("rgba(255,240,200,0.5)", 300);
-        firework(sx, ay, { n: 90, colors: GOLD });
-        setTimeout(() => firework(sx - 110, ay + 60, { n: 50, colors: PALETTE }), 280);
-        setTimeout(() => firework(sx + 110, ay + 60, { n: 50, colors: ["#FF6B9D", "#C44569"] }), 480);
-      }
-    }
-    requestAnimationFrame(fly);
+      requestAnimationFrame(fly);
+    }, 1500);
   },
 
-  // 2: STOKING THE FIRE — rising flame wall with embers and heat shimmer
+  // 2: FIRE WALL — multi-tone gradient flames, ember sparks rising, smoke at top
   () => {
-    FX.start(2800);
+    FX.start(3200);
+    ambient("rgba(40,15,5,1)", 0.22, 300, 1800, 800);
     const W = FX.W, H = FX.H;
     const baseY = H * 0.95;
     let t = 0;
     const interval = setInterval(() => {
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 8; i++) {
         const x = Math.random() * W;
+        // main flame
         FX.spawn({
           x, y: baseY,
-          vx: (Math.random() - 0.5) * 60,
-          vy: -180 - Math.random() * 200,
-          ay: -40, drag: 0.03,
-          life: 1.2 + Math.random() * 0.6,
-          size: 16 + Math.random() * 22,
+          vx: (Math.random() - 0.5) * 50,
+          vy: -200 - Math.random() * 240,
+          ay: -50, drag: 0.025,
+          life: 1.3 + Math.random() * 0.6,
+          size: 22 + Math.random() * 26,
           color: FIRE[Math.floor(Math.random() * FIRE.length)],
-          color2: "rgba(255,80,0,0.4)",
-          shape: "flame",
+          color2: "#FF5500", shape: "flame",
+          composite: "lighter",
+          update: (p) => { p.alpha = (p.life / p.maxLife) ** 0.7; },
         });
-        // embers
+        // brighter inner core
+        FX.spawn({
+          x, y: baseY,
+          vx: (Math.random() - 0.5) * 30,
+          vy: -260 - Math.random() * 200,
+          drag: 0.03, life: 0.8,
+          size: 10, color: "#FFD43B",
+          shape: "circle", glow: 3, composite: "lighter",
+        });
+        // embers (with trails)
         FX.spawn({
           x, y: baseY - 20,
-          vx: (Math.random() - 0.5) * 200,
-          vy: -300 - Math.random() * 200,
-          gravity: 200, drag: 0.02,
-          life: 1.6 + Math.random() * 0.6,
-          size: 2,
-          color: "#FFCC00",
-          shape: "circle", trail: true, trailMax: 5,
+          vx: (Math.random() - 0.5) * 280,
+          vy: -380 - Math.random() * 220,
+          gravity: 240, drag: 0.018,
+          life: 1.8 + Math.random() * 0.5,
+          size: 2.5, color: "#FFE066",
+          shape: "circle", glow: 2.5,
+          trail: true, trailMax: 8,
+          composite: "lighter",
         });
       }
       t += 60;
-      if (t > 1600) clearInterval(interval);
+      if (t > 1800) clearInterval(interval);
     }, 60);
   },
 
-  // 3: COMET SHOWER — diagonal comets with glowing tails
+  // 3: COMET SHOWER — bezier-curved comets with glowing trails
   () => {
-    FX.start(3000);
+    FX.start(3200);
+    ambient("rgba(10,15,40,1)", 0.2, 300, 1800, 800);
     const W = FX.W, H = FX.H;
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 16; i++) {
       setTimeout(() => {
-        const startX = -50 + Math.random() * W * 0.4;
-        const startY = -50 + Math.random() * H * 0.3;
-        const sp = 600 + Math.random() * 300;
-        const ang = Math.PI / 4 + (Math.random() - 0.5) * 0.4;
-        FX.spawn({
-          x: startX, y: startY,
-          vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
-          life: 1.4,
-          size: 5 + Math.random() * 3,
-          color: i % 3 === 0 ? "#FFD700" : "#FFFFFF",
-          shape: "circle", trail: true, trailMax: 18,
-        });
-        // tiny twinkles in path
-        for (let j = 0; j < 8; j++) {
-          setTimeout(() => {
+        const startX = Math.random() * W;
+        const endX = startX + (Math.random() - 0.5) * 400;
+        const cpX = startX + (Math.random() - 0.5) * 300;
+        const cpY = H * (0.3 + Math.random() * 0.3);
+        const T = 1200, t0 = performance.now();
+        const color = ["#FFE66D", "#FFFFFF", "#A0D8FF"][i % 3];
+        function step(t) {
+          const e = Math.min(1, (t - t0) / T);
+          const ee = Ease.inOutCubic(e);
+          const x = (1 - ee) * (1 - ee) * startX + 2 * (1 - ee) * ee * cpX + ee * ee * endX;
+          const y = (1 - ee) * (1 - ee) * -20 + 2 * (1 - ee) * ee * cpY + ee * ee * (H + 20);
+          FX.spawn({
+            x, y, life: 1.2, size: 4 + Math.random() * 2,
+            color, shape: "circle", glow: 3,
+            trail: true, trailMax: 22, composite: "lighter",
+            alpha: 1 - e * 0.3,
+          });
+          if (Math.random() < 0.35) {
             FX.spawn({
-              x: startX + Math.cos(ang) * sp * 0.001 * (j * 80),
-              y: startY + Math.sin(ang) * sp * 0.001 * (j * 80),
-              vx: (Math.random() - 0.5) * 30, vy: (Math.random() - 0.5) * 30,
-              life: 0.7, size: 1.5,
-              color: "#FFFFFF", shape: "star", points: 4,
-              vrot: 4,
+              x: x + (Math.random() - 0.5) * 16, y: y + (Math.random() - 0.5) * 16,
+              vx: (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60,
+              life: 0.7, size: 2 + Math.random() * 2,
+              color: "#fff", shape: "star", points: 4,
+              vrot: 8, composite: "lighter", glow: 2,
             });
-          }, j * 40);
+          }
+          if (e < 1) requestAnimationFrame(step);
         }
-      }, i * 120);
+        requestAnimationFrame(step);
+      }, i * 100);
     }
   },
 
-  // 4: HEART RESONANCE — big heart pulses, shatters into smaller hearts with physics
-  () => {
-    FX.start(3000);
-    const W = FX.W, H = FX.H;
-    const cx = W / 2, cy = H * 0.4;
-    const dom = domLayer(2400);
-    const heart = document.createElement("div");
-    heart.textContent = "❤️";
-    heart.style.cssText = `position:absolute;left:${cx}px;top:${cy}px;font-size:80px;transform:translate(-50%,-50%) scale(0);transition:transform 0.6s cubic-bezier(0.34,1.56,0.64,1);will-change:transform`;
-    dom.appendChild(heart);
-    requestAnimationFrame(() => heart.style.transform = "translate(-50%,-50%) scale(1)");
-    setTimeout(() => heart.style.transform = "translate(-50%,-50%) scale(1.4)", 500);
-    setTimeout(() => heart.style.transform = "translate(-50%,-50%) scale(0.9)", 700);
-    setTimeout(() => {
-      heart.style.transform = "translate(-50%,-50%) scale(0)";
-      // shatter
-      for (let i = 0; i < 30; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const sp = 200 + Math.random() * 280;
-        FX.spawn({
-          x: cx, y: cy,
-          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 100,
-          gravity: 600, drag: 0.02,
-          life: 1.8, size: 14 + Math.random() * 8,
-          color: ["#FF3366", "#FF6B9D", "#C44569", "#FFB3C6"][i % 4],
-          shape: "text", text: "♥", weight: 900,
-          vrot: (Math.random() - 0.5) * 8,
-          composite: "source-over",
-        });
-      }
-    }, 900);
-  },
-
-  // 5: COIN CASCADE — falling spinning gold coins with bounce + impact sparkles
+  // 4: HEART RESONANCE — drawn heart pulses, radial shockwave, shatters into hearts
   () => {
     FX.start(3500);
+    ambient("rgba(50,5,25,1)", 0.18, 300, 2000, 800);
+    const W = FX.W, H = FX.H;
+    const cx = W / 2, cy = H * 0.4;
+
+    // central pulsing heart
+    FX.spawn({
+      x: cx, y: cy, life: 1.2, size: 0, color: "#FF3366",
+      shape: "heart", glow: 5,
+      update: (p) => {
+        const e = (p.maxLife - p.life) / p.maxLife;
+        p.size = 70 + Math.sin(e * Math.PI * 3) * 18;
+      },
+    });
+    // shockwave rings
+    for (let i = 0; i < 4; i++) {
+      setTimeout(() => {
+        FX.spawn({
+          x: cx, y: cy, life: 1.4, size: 20,
+          color: ["#FF6B9D", "#FF3366", "#FFB3C6", "#C44569"][i],
+          shape: "ring", lineW: 4,
+          update: (p, dt) => { p.size += 350 * dt; p.alpha = (p.life / p.maxLife); },
+        });
+      }, 200 + i * 200);
+    }
+
+    // shatter into hearts
+    setTimeout(() => {
+      for (let i = 0; i < 28; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 180 + Math.random() * 280;
+        FX.spawn({
+          x: cx, y: cy,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120,
+          gravity: 580, drag: 0.018,
+          life: 1.9, size: 11 + Math.random() * 8,
+          color: ROSE[i % ROSE.length],
+          shape: "heart", glow: 2,
+          vrot: (Math.random() - 0.5) * 8,
+        });
+      }
+    }, 1100);
+  },
+
+  // 5: COIN CASCADE — 3D-ish spinning gold coins with bounce + sparks
+  () => {
+    FX.start(3800);
+    ambient("rgba(35,25,5,1)", 0.18, 300, 2200, 800);
     const W = FX.W, H = FX.H;
     const groundY = H * 0.85;
-    for (let i = 0; i < 28; i++) {
+    for (let i = 0; i < 30; i++) {
       setTimeout(() => {
         const sx = 60 + Math.random() * (W - 120);
         const c = {
           x: sx, y: -40,
-          vx: (Math.random() - 0.5) * 60, vy: 100,
-          gravity: 1200, drag: 0.005,
-          life: 3.0, size: 14 + Math.random() * 6,
+          vx: (Math.random() - 0.5) * 80, vy: 80,
+          gravity: 1300, drag: 0.005,
+          life: 3.0, size: 14 + Math.random() * 7,
           color: GOLD[i % GOLD.length],
-          shape: "ring", lineW: 4,
-          composite: "source-over",
-        };
-        c.update = (p, dt) => {
-          // simulate spin via squished width — fake it via vrot
-          if (p.y > groundY && p.vy > 0) {
-            p.vy = -p.vy * 0.55;
-            // impact sparkle
-            for (let k = 0; k < 6; k++) {
-              const a = -Math.PI + Math.random() * Math.PI;
+          shape: "coin", spinPhase: Math.random() * Math.PI,
+          glow: 2,
+          update: (p, dt) => {
+            p.spinPhase = (p.spinPhase || 0) + dt * 14;
+            if (p.y > groundY && p.vy > 0) {
+              p.vy = -p.vy * 0.55;
+              p.vx *= 0.7;
+              // impact ring
               FX.spawn({
-                x: p.x, y: groundY,
-                vx: Math.cos(a) * 200, vy: Math.sin(a) * 220,
-                gravity: 600, drag: 0.04,
-                life: 0.6, size: 2,
-                color: "#FFE66D", shape: "spark",
+                x: p.x, y: groundY + 6, life: 0.45, size: 8,
+                color: p.color, shape: "ring", lineW: 2.5,
+                update: (q, dt) => { q.size += 220 * dt; q.alpha = q.life / q.maxLife; },
+                composite: "lighter",
               });
+              // sparks
+              for (let k = 0; k < 8; k++) {
+                const a = -Math.PI + Math.random() * Math.PI;
+                FX.spawn({
+                  x: p.x, y: groundY,
+                  vx: Math.cos(a) * 240, vy: Math.sin(a) * 280,
+                  gravity: 600, drag: 0.04,
+                  life: 0.7, size: 2,
+                  color: "#FFE066", shape: "spark",
+                  glow: 2, composite: "lighter",
+                });
+              }
             }
-          }
+          },
         };
-        c.vrot = (Math.random() - 0.5) * 12;
         FX.spawn(c);
-      }, i * 60);
+      }, i * 55);
     }
   },
 
-  // 6: LIGHTNING — fractal bolt drawn on canvas, screen flash, thunder shake, residual sparks
+  // 6: LIGHTNING — fractal bolt with ghosting afterglow, thunder shake, ozone sparks
   () => {
-    FX.start(2200);
+    FX.start(2500);
+    flash("rgba(255,255,220,0.9)", 600);
+    shake(12, 700);
+    ambient("rgba(40,40,80,1)", 0.25, 100, 1500, 800);
     const W = FX.W, H = FX.H;
-    flash("rgba(255,255,220,0.85)", 500);
-    shake(10, 600);
-    // Draw bolt as a series of fast-fading line particles
-    const segs = [];
-    lightningBolt(W / 2 + (Math.random() - 0.5) * 200, -10, W / 2, H * 0.5, 200, null, segs);
-    segs.forEach((s, i) => {
-      const [x1, y1, x2, y2] = s;
-      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
-      const len = Math.hypot(x2 - x1, y2 - y1);
-      const ang = Math.atan2(y2 - y1, x2 - x1);
-      FX.spawn({
-        x: cx, y: cy, rot: ang,
-        life: 0.5, size: 5,
-        color: "#FFFFFF", shape: "rect",
-        update: (p) => {
-          p.alpha = (p.life / p.maxLife) ** 0.5;
-        },
-      });
-      // overdraw thinner blue core
-      FX.spawn({
-        x: cx, y: cy, rot: ang,
-        life: 0.5, size: 2,
-        color: "#9CC9FF", shape: "rect",
-      });
-      // glow
-      FX.spawn({
-        x: cx, y: cy,
-        life: 0.4, size: len / 2,
-        color: "rgba(180,200,255,0.3)", shape: "circle",
-      });
-    });
-    // residual sparks
-    setTimeout(() => {
-      for (let i = 0; i < 30; i++) {
+
+    // Multi-stage bolt: 3 ghost flickers
+    function drawBolt(intensity) {
+      const segs = [];
+      lightningBolt(W / 2 + (Math.random() - 0.5) * 250, -10, W / 2 + (Math.random() - 0.5) * 100, H * 0.6, 220, segs);
+      segs.forEach(s => {
+        const [x1, y1, x2, y2] = s;
+        const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+        const len = Math.hypot(x2 - x1, y2 - y1);
+        const ang = Math.atan2(y2 - y1, x2 - x1);
+        // outer glow
         FX.spawn({
-          x: W / 2 + (Math.random() - 0.5) * 200,
-          y: H * 0.5 + (Math.random() - 0.5) * 100,
-          vx: (Math.random() - 0.5) * 300, vy: -100 - Math.random() * 200,
+          x: cx, y: cy, rot: ang,
+          life: 0.6 * intensity, size: 12,
+          color: "#A0C0FF", shape: "rect", glow: 0,
+          composite: "lighter", alpha: 0.4,
+        });
+        // bright core
+        FX.spawn({
+          x: cx, y: cy, rot: ang,
+          life: 0.5 * intensity, size: 4,
+          color: "#fff", shape: "rect",
+          composite: "lighter",
+        });
+        // blue inner
+        FX.spawn({
+          x: cx, y: cy, rot: ang,
+          life: 0.4 * intensity, size: 2,
+          color: "#9CC9FF", shape: "rect",
+          composite: "lighter",
+        });
+      });
+    }
+    drawBolt(1);
+    setTimeout(() => { drawBolt(0.5); flash("rgba(255,255,255,0.4)", 200); }, 120);
+    setTimeout(() => { drawBolt(0.3); }, 240);
+
+    // ozone sparks falling along bolt path
+    setTimeout(() => {
+      for (let i = 0; i < 40; i++) {
+        FX.spawn({
+          x: W / 2 + (Math.random() - 0.5) * 280,
+          y: Math.random() * H * 0.6,
+          vx: (Math.random() - 0.5) * 200, vy: -120 - Math.random() * 200,
           gravity: 400, drag: 0.04,
-          life: 1.0, size: 2.5,
+          life: 1.2, size: 2.5,
           color: "#A0D8FF", shape: "spark",
+          glow: 2, composite: "lighter",
         });
       }
     }, 200);
   },
 
-  // 7: SPARKLE STORM — depth-layered twinkles with rotation
+  // 7: SPARKLE STORM — depth-layered stars with glow halos, twinkle in/out
   () => {
-    FX.start(3000);
+    FX.start(3500);
+    ambient("rgba(20,10,40,1)", 0.18, 400, 2000, 900);
     const W = FX.W, H = FX.H;
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 100; i++) {
       setTimeout(() => {
         const depth = 0.3 + Math.random() * 0.7;
+        const colors = ["#FFE66D", "#FFD700", "#FFFFFF", "#FFA94D", "#A0D8FF"];
         FX.spawn({
           x: Math.random() * W, y: Math.random() * H,
-          life: 0.9 + Math.random() * 0.6,
-          size: 4 + depth * 14, alpha: depth,
-          color: ["#FFE66D", "#FFD700", "#FFFFFF", "#FFA94D"][i % 4],
-          shape: "star", points: 4, vrot: (Math.random() - 0.5) * 8,
+          life: 0.9 + Math.random() * 0.7,
+          size: 4 + depth * 16, alpha: 0,
+          color: colors[i % colors.length],
+          shape: "star", points: 4, vrot: (Math.random() - 0.5) * 6,
+          glow: 3, composite: "lighter",
           update: (p) => {
             const e = p.life / p.maxLife;
-            p.alpha = depth * Math.sin(e * Math.PI);
+            p.alpha = depth * Math.sin((1 - e) * Math.PI);
           },
         });
-      }, i * 25);
+      }, i * 22);
     }
   },
 
-  // 8: TROPHY ASCENSION — trophy emoji rises, light rays + gold dust orbit
+  // 8: TROPHY ASCENSION — rises with light beams, gold dust orbit
   () => {
-    FX.start(3200);
+    FX.start(3800);
+    ambient("rgba(30,20,5,1)", 0.22, 400, 2500, 900);
+    vignette(0.35, 2800);
     const W = FX.W, H = FX.H;
     const cx = W / 2, cy = H * 0.4;
-    const dom = domLayer(2800);
+    const dom = domLayer(3500);
+
+    // light beams (canvas, rotating)
+    const beamColors = ["#FFD700", "#FFA94D", "#FFE066"];
+    for (let i = 0; i < 14; i++) {
+      const angle0 = (i / 14) * Math.PI * 2;
+      FX.spawn({
+        x: cx, y: cy, rot: angle0, life: 3.0,
+        size: 380, color: beamColors[i % 3] + "30",
+        shape: "ray", lineW: 24,
+        composite: "lighter",
+        update: (p, dt) => {
+          p.rot += dt * 0.4;
+          p.alpha = Math.sin((p.maxLife - p.life) / p.maxLife * Math.PI);
+        },
+      });
+    }
+
+    // trophy DOM
     const trophy = document.createElement("div");
     trophy.textContent = "🏆";
-    trophy.style.cssText = `position:absolute;left:${cx}px;top:${H + 100}px;font-size:120px;transform:translate(-50%,-50%);transition:top 1.2s cubic-bezier(0.22,1,0.36,1), transform 1.2s;filter:drop-shadow(0 8px 24px rgba(180,140,40,0.5))`;
+    trophy.style.cssText = `position:absolute;left:${cx}px;top:${H + 100}px;font-size:120px;transform:translate(-50%,-50%);transition:top 1.3s cubic-bezier(0.22,1,0.36,1), transform 1.3s, filter 1.3s;filter:drop-shadow(0 0 12px rgba(255,215,0,0.4))`;
     dom.appendChild(trophy);
     requestAnimationFrame(() => {
       trophy.style.top = cy + "px";
       trophy.style.transform = "translate(-50%,-50%) rotate(360deg) scale(1)";
+      trophy.style.filter = "drop-shadow(0 0 36px rgba(255,215,0,0.95))";
     });
-    // light rays
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      FX.spawn({
-        x: cx, y: cy, rot: a,
-        life: 2.5, size: 200,
-        color: "rgba(255,215,0,0.15)", shape: "rect",
-        update: (p, dt) => { p.rot += dt * 0.5; },
-      });
-    }
-    // orbiting dust
-    for (let i = 0; i < 40; i++) {
-      const orbit = 80 + Math.random() * 60;
+
+    // orbiting gold dust
+    for (let i = 0; i < 50; i++) {
+      const orbit = 80 + Math.random() * 70;
       const a0 = Math.random() * Math.PI * 2;
-      const sp = 1.5 + Math.random();
+      const sp = 1.3 + Math.random();
       FX.spawn({
         x: cx + Math.cos(a0) * orbit, y: cy + Math.sin(a0) * orbit,
-        life: 2.5, size: 2.5,
+        life: 3.0, size: 2.5 + Math.random() * 1.5,
         color: GOLD[i % GOLD.length], shape: "circle",
-        update: (p, dt) => {
+        glow: 2.5, composite: "lighter",
+        update: (p) => {
           const e = (p.maxLife - p.life) / p.maxLife;
           const ang = a0 + e * sp * Math.PI * 2;
-          p.x = cx + Math.cos(ang) * orbit * (1 - e * 0.2);
-          p.y = cy + Math.sin(ang) * orbit * (1 - e * 0.2);
+          const r = orbit * (1 - e * 0.25);
+          p.x = cx + Math.cos(ang) * r;
+          p.y = cy + Math.sin(ang) * r;
+          p.alpha = Math.sin(e * Math.PI);
         },
       });
     }
+
+    // crown burst at apex
+    setTimeout(() => {
+      for (let i = 0; i < 30; i++) {
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * 0.8;
+        const sp = 200 + Math.random() * 200;
+        FX.spawn({
+          x: cx, y: cy - 40,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          gravity: 400, drag: 0.03, life: 1.4,
+          size: 4, color: "#FFD700", shape: "star", points: 5,
+          vrot: 6, glow: 2.5, composite: "lighter",
+        });
+      }
+    }, 1300);
   },
 
-  // 9: TRIPLE MORTAR FIREWORKS — launch trails + bursts
+  // 9: TRIPLE MORTAR — launch trails + chrysanthemum bursts
   () => {
-    FX.start(4500);
+    FX.start(5000);
+    ambient("rgba(15,10,35,1)", 0.22, 400, 3500, 900);
     const W = FX.W, H = FX.H;
     const launches = [
-      { x: W * 0.25, delay: 0, colors: PALETTE },
-      { x: W * 0.5, delay: 350, colors: GOLD },
-      { x: W * 0.75, delay: 700, colors: ["#FF6B9D", "#C44569", "#FFB3C6"] },
+      { x: W * 0.25, delay: 0, colors: GOLD },
+      { x: W * 0.5, delay: 350, colors: PALETTE },
+      { x: W * 0.75, delay: 700, colors: ROSE },
+      { x: W * 0.4, delay: 1300, colors: ["#fff", "#FFE66D"] },
+      { x: W * 0.6, delay: 1500, colors: GOLD },
     ];
     launches.forEach(L => {
       setTimeout(() => {
-        const startY = H, apexY = H * 0.25 + Math.random() * H * 0.15;
-        const T = 700, t0 = performance.now();
+        const startY = H, apexY = H * 0.2 + Math.random() * H * 0.18;
+        const T = 750, t0 = performance.now();
         function up(t) {
           const e = Math.min(1, (t - t0) / T);
-          const y = startY + (apexY - startY) * e;
+          const ee = Ease.outQuint(e);
+          const y = startY + (apexY - startY) * ee;
           FX.spawn({
-            x: L.x + (Math.random() - 0.5) * 6, y,
-            life: 0.5, size: 3,
-            color: "#FFE66D", shape: "circle", trail: true, trailMax: 10,
-            vy: -20,
+            x: L.x + (Math.random() - 0.5) * 4, y,
+            life: 0.6, size: 3,
+            color: "#FFE66D", shape: "circle", glow: 3,
+            trail: true, trailMax: 14, composite: "lighter",
+            vy: -30,
           });
+          // sparks shedding upward
+          if (Math.random() < 0.5) {
+            FX.spawn({
+              x: L.x + (Math.random() - 0.5) * 8, y,
+              vx: (Math.random() - 0.5) * 40, vy: 30 + Math.random() * 60,
+              gravity: 200, drag: 0.04, life: 0.6,
+              size: 2, color: "#FFCC00", shape: "spark", composite: "lighter",
+            });
+          }
           if (e < 1) requestAnimationFrame(up);
-          else firework(L.x, apexY, { n: 80, colors: L.colors });
+          else firework(L.x, apexY, { n: 90, colors: L.colors });
         }
         requestAnimationFrame(up);
       }, L.delay);
     });
   },
 
-  // 10: HALFWAY GATES — golden gates open, light bursts forth, banner sweeps
+  // 10: HALFWAY GATES — letters fly together, gates open, golden burst
   () => {
-    FX.start(3500);
+    FX.start(4000);
+    ambient("rgba(40,25,5,1)", 0.25, 300, 2800, 800);
+    vignette(0.4, 3200);
     const W = FX.W, H = FX.H;
-    const cx = W / 2, cy = H * 0.45;
+    const cx = W / 2, cy = H * 0.42;
     flash("rgba(255,215,0,0.3)", 400);
-    // Banner DOM
-    const dom = domLayer(3200);
-    const banner = document.createElement("div");
-    banner.textContent = "HALFWAY";
-    banner.style.cssText = `position:absolute;left:50%;top:38%;transform:translate(-50%,-50%) scale(0.5);font-size:64px;font-weight:900;letter-spacing:8px;color:#fff;text-shadow:0 0 30px rgba(201,100,66,0.8), 0 4px 16px rgba(0,0,0,0.4);transition:transform 0.7s cubic-bezier(0.34,1.56,0.64,1), opacity 0.4s;opacity:0`;
-    dom.appendChild(banner);
-    setTimeout(() => { banner.style.opacity = "1"; banner.style.transform = "translate(-50%,-50%) scale(1)"; }, 200);
-    setTimeout(() => { banner.style.opacity = "0"; banner.style.transform = "translate(-50%,-50%) scale(1.5)"; }, 1900);
+
+    const dom = domLayer(3800);
+    const word = "HALFWAY";
+    const titleEl = document.createElement("div");
+    titleEl.style.cssText = `position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);display:flex;gap:6px;font-size:56px;font-weight:900;letter-spacing:8px;color:#fff;text-shadow:0 0 30px rgba(255,215,0,0.9), 0 0 60px rgba(255,140,0,0.6)`;
+    word.split("").forEach((ch, i) => {
+      const s = document.createElement("span");
+      s.textContent = ch;
+      const fromX = (i - word.length / 2) * 200;
+      s.style.cssText = `display:inline-block;opacity:0;transform:translateX(${fromX}px) scale(0.3);transition:transform 0.6s cubic-bezier(0.34,1.56,0.64,1), opacity 0.4s`;
+      titleEl.appendChild(s);
+      setTimeout(() => { s.style.opacity = "1"; s.style.transform = "translateX(0) scale(1)"; }, 200 + i * 80);
+    });
+    dom.appendChild(titleEl);
+    setTimeout(() => { titleEl.style.opacity = "0"; titleEl.style.transition = "opacity 0.6s"; }, 2400);
+
     // expanding rings
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       setTimeout(() => {
         FX.spawn({
-          x: cx, y: cy,
-          life: 1.5, size: 10,
+          x: cx, y: cy, life: 1.5, size: 10,
           color: GOLD[i % GOLD.length], shape: "ring", lineW: 4,
-          update: (p, dt) => { p.size += 400 * dt; p.alpha = p.life / p.maxLife; },
+          glow: 2, composite: "lighter",
+          update: (p, dt) => { p.size += 380 * dt; p.alpha = p.life / p.maxLife; },
         });
-      }, i * 200);
+      }, 600 + i * 200);
     }
-    // gate particles split L/R
-    for (let i = 0; i < 30; i++) {
-      const side = i % 2 === 0 ? -1 : 1;
-      FX.spawn({
-        x: cx, y: cy + (Math.random() - 0.5) * 200,
-        vx: side * (200 + Math.random() * 200),
-        vy: (Math.random() - 0.5) * 60,
-        drag: 0.02, life: 1.5,
-        size: 6, color: GOLD[i % GOLD.length], shape: "rect",
-      });
-    }
+
+    // gate split particles
+    setTimeout(() => {
+      for (let i = 0; i < 40; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        FX.spawn({
+          x: cx, y: cy + (Math.random() - 0.5) * 220,
+          vx: side * (200 + Math.random() * 250),
+          vy: (Math.random() - 0.5) * 80,
+          drag: 0.02, life: 1.8,
+          size: 6, color: GOLD[i % GOLD.length], shape: "rect",
+          vrot: (Math.random() - 0.5) * 6,
+          glow: 2, composite: "lighter",
+        });
+      }
+    }, 800);
+
+    // golden firework at end
+    setTimeout(() => firework(cx, cy, { n: 100, colors: GOLD }), 2300);
   },
 
-  // 11: BLOOM GARDEN — petals unfurl from center, butterflies drift
+  // 11: BLOOM GARDEN — drawn flower with layered petals + butterflies + leaves
   () => {
-    FX.start(3500);
+    FX.start(4000);
+    ambient("rgba(20,40,15,1)", 0.18, 400, 2500, 900);
     const W = FX.W, H = FX.H;
     const cx = W / 2, cy = H * 0.45;
-    const flowerColors = ["#FF6B9D", "#FFB3C6", "#C44569", "#FFD93D", "#FF8C42"];
-    // central bloom
-    for (let layer = 0; layer < 3; layer++) {
+    const flowerColors = ["#FF6B9D", "#FFB3C6", "#C44569", "#FFD93D", "#FF8C42", "#9C5BC4"];
+
+    // central layered bloom
+    for (let layer = 0; layer < 4; layer++) {
       setTimeout(() => {
-        const petals = 8 + layer * 2;
+        const petals = 6 + layer * 2;
         for (let i = 0; i < petals; i++) {
-          const a = (i / petals) * Math.PI * 2;
+          const a = (i / petals) * Math.PI * 2 + (layer * 0.2);
           FX.spawn({
-            x: cx, y: cy, rot: a,
-            life: 2.0, size: 0,
+            x: cx, y: cy, rot: a + Math.PI, life: 2.4, size: 0,
             color: flowerColors[(layer * 3 + i) % flowerColors.length],
-            shape: "petal", composite: "source-over",
-            update: (p, dt) => {
+            shape: "petal", glow: 1.5,
+            update: (p) => {
               const e = (p.maxLife - p.life) / p.maxLife;
-              p.size = 30 + e * 60 - (e > 0.7 ? (e - 0.7) * 100 : 0);
+              p.size = Ease.outBack(Math.min(1, e * 2)) * 40 - (e > 0.7 ? (e - 0.7) * 130 : 0);
               p.alpha = e < 0.2 ? e * 5 : (1 - Math.max(0, e - 0.7) * 3);
             },
           });
         }
-      }, layer * 250);
+      }, layer * 200);
     }
-    // outer scatter petals
+    // center disk
     setTimeout(() => {
-      for (let i = 0; i < 40; i++) {
+      FX.spawn({
+        x: cx, y: cy, life: 2.0, size: 0,
+        color: "#FFC857", shape: "circle", glow: 2,
+        update: (p) => {
+          const e = (p.maxLife - p.life) / p.maxLife;
+          p.size = Math.sin(e * Math.PI) * 16;
+        },
+      });
+    }, 400);
+
+    // outer scatter petals + leaves
+    setTimeout(() => {
+      for (let i = 0; i < 50; i++) {
         const a = Math.random() * Math.PI * 2;
-        const sp = 100 + Math.random() * 200;
+        const sp = 120 + Math.random() * 240;
         FX.spawn({
           x: cx, y: cy,
-          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 50,
-          gravity: 80, drag: 0.04,
-          life: 2.5, size: 8 + Math.random() * 10,
-          color: flowerColors[i % flowerColors.length],
-          shape: "petal", composite: "source-over",
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60,
+          gravity: 100, drag: 0.04,
+          life: 2.6, size: 8 + Math.random() * 10,
+          color: i % 5 === 0 ? "#5A8A3A" : flowerColors[i % flowerColors.length],
+          shape: i % 5 === 0 ? "leaf" : "petal",
           vrot: (Math.random() - 0.5) * 6,
+          glow: 1.5,
         });
       }
-    }, 700);
+    }, 900);
+
+    // butterflies DOM
+    const dom = domLayer(4000);
+    for (let i = 0; i < 4; i++) {
+      const b = document.createElement("div");
+      b.textContent = "🦋";
+      const startX = Math.random() < 0.5 ? -50 : W + 50;
+      const endX = startX < 0 ? W + 50 : -50;
+      const startY = cy + (Math.random() - 0.5) * 200;
+      b.style.cssText = `position:absolute;left:${startX}px;top:${startY}px;font-size:32px;transition:left 3.5s cubic-bezier(0.4,0,0.6,1), top 3.5s cubic-bezier(0.4,0,0.6,1);will-change:left,top`;
+      dom.appendChild(b);
+      setTimeout(() => {
+        b.style.left = endX + "px";
+        b.style.top = (startY + (Math.random() - 0.5) * 200) + "px";
+      }, 600 + i * 200);
+    }
   },
 
-  // 12: ROCKET FUEL — barrage of small rockets crossing screen
+  // 12: ROCKET FUEL — barrage with motion-blur trails + bursts
   () => {
-    FX.start(3500);
+    FX.start(3800);
+    ambient("rgba(20,8,5,1)", 0.18, 300, 2400, 900);
     const W = FX.W, H = FX.H;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       setTimeout(() => {
-        const sx = -30, sy = H * (0.3 + Math.random() * 0.5);
-        const ex = W + 30, ey = H * (0.2 + Math.random() * 0.5);
+        const sx = -30, sy = H * (0.25 + Math.random() * 0.55);
+        const ex = W + 30, ey = H * (0.2 + Math.random() * 0.55);
         const T = 700, t0 = performance.now();
         function fly(t) {
           const e = Math.min(1, (t - t0) / T);
           const x = sx + (ex - sx) * e;
-          const y = sy + (ey - sy) * e + Math.sin(e * Math.PI) * -60;
-          // spawn flame trail
-          for (let k = 0; k < 3; k++) {
+          const y = sy + (ey - sy) * e + Math.sin(e * Math.PI) * -80;
+          // flame trail
+          for (let k = 0; k < 4; k++) {
             FX.spawn({
-              x: x - 10, y: y + (Math.random() - 0.5) * 4,
-              vx: -120 + (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60,
-              drag: 0.05, life: 0.5,
-              size: 6 + Math.random() * 6,
+              x: x - 14, y: y + (Math.random() - 0.5) * 4,
+              vx: -140 + (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60,
+              drag: 0.05, life: 0.55,
+              size: 7 + Math.random() * 7,
               color: FIRE[Math.floor(Math.random() * FIRE.length)],
-              color2: "rgba(255,150,0,0.4)", shape: "flame",
+              color2: "#FFB347", shape: "flame", composite: "lighter",
             });
           }
-          // body
-          FX.spawn({ x, y, life: 0.06, size: 4, color: "#fff", shape: "circle" });
+          // bright nose
+          FX.spawn({
+            x, y, life: 0.3, size: 5,
+            color: "#fff", shape: "circle", glow: 3,
+            trail: true, trailMax: 8, composite: "lighter",
+          });
           if (e < 1) requestAnimationFrame(fly);
-          else firework(x, y, { n: 40, colors: GOLD });
+          else firework(x, y, { n: 50, colors: i % 2 === 0 ? GOLD : PALETTE });
         }
         requestAnimationFrame(fly);
-      }, i * 350);
+      }, i * 380);
     }
   },
 
-  // 13: DISCO — color sweeps + rotating mirror-ball reflections
+  // 13: DISCO — rotating mirror ball with proper reflection grid, color sweeps
   () => {
-    FX.start(3500);
-    const W = FX.W, H = FX.H;
-    const cx = W / 2, cy = H * 0.35;
-    // strobe
-    PALETTE.forEach((c, i) => {
-      setTimeout(() => flash(c.replace(")", ",0.25)").replace("rgb", "rgba").replace("#", "rgba(") + "", 200), i * 180);
-      setTimeout(() => {
-        const el = document.createElement("div");
-        el.style.cssText = `position:fixed;inset:0;background:${c};opacity:0.18;pointer-events:none;z-index:155;transition:opacity 0.2s`;
-        document.body.appendChild(el);
-        setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 300); }, 150);
-      }, i * 180);
-    });
-    // mirror ball: rotating reflection dots
-    for (let frame = 0; frame < 60; frame++) {
-      setTimeout(() => {
-        const ang = frame * 0.3;
-        for (let i = 0; i < 8; i++) {
-          const a = ang + (i / 8) * Math.PI * 2;
-          FX.spawn({
-            x: cx + Math.cos(a) * 100, y: cy + Math.sin(a) * 100,
-            life: 0.4, size: 6,
-            color: PALETTE[(frame + i) % PALETTE.length],
-            shape: "circle",
-          });
-        }
-      }, frame * 50);
-    }
-    // diagonal light beams
-    for (let i = 0; i < 20; i++) {
-      setTimeout(() => {
-        FX.spawn({
-          x: cx, y: cy, rot: Math.random() * Math.PI * 2,
-          life: 0.6, size: 300,
-          color: "rgba(255,255,255,0.15)", shape: "rect",
-        });
-      }, i * 100);
-    }
-  },
-
-  // 14: BEAST MODE — earthquake shake, shockwaves, lightning crack, "💪" core
-  () => {
-    FX.start(3000);
+    FX.start(3800);
+    ambient("rgba(20,5,40,1)", 0.28, 400, 2500, 900);
     const W = FX.W, H = FX.H;
     const cx = W / 2, cy = H * 0.4;
-    shake(15, 800);
-    flash("rgba(255,80,40,0.3)", 500);
-    // shockwaves
-    for (let i = 0; i < 4; i++) {
+
+    // strobe palette flashes
+    PALETTE.forEach((c, i) => {
+      setTimeout(() => {
+        const el = document.createElement("div");
+        el.style.cssText = `position:fixed;inset:0;background:${c};opacity:0.18;pointer-events:none;z-index:155;transition:opacity 0.18s`;
+        document.body.appendChild(el);
+        setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 250); }, 130);
+      }, i * 180);
+    });
+
+    // mirror-ball: rotating dot grid (4 latitude rings)
+    const totalFrames = 70;
+    for (let frame = 0; frame < totalFrames; frame++) {
+      setTimeout(() => {
+        const ang = frame * 0.18;
+        const latRings = [0.3, 0.55, 0.8, 1];
+        latRings.forEach((latR, lat) => {
+          const r = 70 * latR;
+          const y = cy - 70 * (1 - latR);
+          const dots = 6 + lat * 2;
+          for (let i = 0; i < dots; i++) {
+            const a = ang + (i / dots) * Math.PI * 2;
+            FX.spawn({
+              x: cx + Math.cos(a) * r, y: y + Math.sin(a) * r * 0.3,
+              life: 0.35, size: 4 + lat * 1.5,
+              color: PALETTE[(frame + i + lat) % PALETTE.length],
+              shape: "circle", glow: 2,
+              composite: "lighter",
+            });
+          }
+        });
+      }, frame * 50);
+    }
+
+    // sweeping spotlight beams
+    for (let i = 0; i < 24; i++) {
+      setTimeout(() => {
+        const ang = Math.random() * Math.PI * 2;
+        FX.spawn({
+          x: cx, y: cy, rot: ang, life: 0.7, size: 380,
+          color: PALETTE[i % PALETTE.length] + "44",
+          shape: "ray", lineW: 18,
+          composite: "lighter",
+        });
+      }, i * 130);
+    }
+  },
+
+  // 14: BEAST MODE — earthquake shockwaves, crack lines, ember burst, "💪" core
+  () => {
+    FX.start(3200);
+    ambient("rgba(60,5,5,1)", 0.32, 200, 2000, 900);
+    shake(18, 1000);
+    flash("rgba(255,60,20,0.4)", 600);
+    const W = FX.W, H = FX.H;
+    const cx = W / 2, cy = H * 0.4;
+
+    // shockwave rings
+    for (let i = 0; i < 5; i++) {
       setTimeout(() => {
         FX.spawn({
-          x: cx, y: cy, life: 1.2, size: 10,
-          color: ["#FF3B30", "#FFCC00", "#fff", "#FF6B1A"][i],
-          shape: "ring", lineW: 6,
+          x: cx, y: cy, life: 1.3, size: 12,
+          color: ["#FF3B30", "#FFCC00", "#fff", "#FF6B1A", "#FF3B30"][i],
+          shape: "ring", lineW: 7, glow: 3,
+          composite: "lighter",
           update: (p, dt) => {
-            p.size += 600 * dt;
-            p.alpha = p.life / p.maxLife;
+            p.size += 680 * dt;
+            p.alpha = (p.life / p.maxLife);
           },
         });
-      }, i * 150);
+      }, i * 130);
     }
-    // muscle emoji DOM
-    const dom = domLayer(2400);
+
+    // muscle DOM
+    const dom = domLayer(2600);
     const muscle = document.createElement("div");
     muscle.textContent = "💪";
-    muscle.style.cssText = `position:absolute;left:${cx}px;top:${cy}px;font-size:140px;transform:translate(-50%,-50%) scale(0);transition:transform 0.5s cubic-bezier(0.34,1.56,0.64,1)`;
+    muscle.style.cssText = `position:absolute;left:${cx}px;top:${cy}px;font-size:160px;transform:translate(-50%,-50%) scale(0);transition:transform 0.5s cubic-bezier(0.34,1.56,0.64,1);filter:drop-shadow(0 0 40px rgba(255,80,40,0.9))`;
     dom.appendChild(muscle);
-    requestAnimationFrame(() => muscle.style.transform = "translate(-50%,-50%) scale(1) rotate(-10deg)");
-    setTimeout(() => muscle.style.transform = "translate(-50%,-50%) scale(1.1) rotate(10deg)", 600);
-    setTimeout(() => muscle.style.opacity = "0", 1800);
-    // explosion sparks
+    requestAnimationFrame(() => muscle.style.transform = "translate(-50%,-50%) scale(1) rotate(-12deg)");
+    setTimeout(() => muscle.style.transform = "translate(-50%,-50%) scale(1.15) rotate(12deg)", 600);
+    setTimeout(() => muscle.style.opacity = "0", 1900);
+
+    // crack lines on screen — drawn as fast-fading rect bars
     setTimeout(() => {
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; i < 8; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const len = 200 + Math.random() * 300;
+        FX.spawn({
+          x: cx + Math.cos(ang) * 40,
+          y: cy + Math.sin(ang) * 40,
+          rot: ang, life: 0.4,
+          size: len, color: "#fff", shape: "ray",
+          lineW: 3, composite: "lighter",
+        });
+      }
+    }, 200);
+
+    // explosion sparks (heavy)
+    setTimeout(() => {
+      for (let i = 0; i < 80; i++) {
         const a = Math.random() * Math.PI * 2;
-        const sp = 300 + Math.random() * 400;
+        const sp = 300 + Math.random() * 500;
         FX.spawn({
           x: cx, y: cy,
           vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-          gravity: 600, drag: 0.025, life: 1.4,
-          size: 3, color: ["#FF3B30", "#FFCC00", "#FF6B1A"][i % 3],
-          shape: "spark",
+          gravity: 600, drag: 0.025, life: 1.5,
+          size: 3, color: ["#FF3B30", "#FFCC00", "#FF6B1A", "#fff"][i % 4],
+          shape: "spark", glow: 2, composite: "lighter",
         });
       }
     }, 400);
   },
 
-  // 15: SHOOTING STARS — bezier-pathed comets with sparkle wake
+  // 15: SHOOTING STARS — bezier paths with curving glow trails
   () => {
-    FX.start(3500);
+    FX.start(3800);
+    ambient("rgba(10,15,40,1)", 0.25, 300, 2600, 900);
     const W = FX.W, H = FX.H;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 10; i++) {
       setTimeout(() => {
         const sx = Math.random() * W, sy = -30;
-        const ex = sx + (Math.random() - 0.5) * W, ey = H + 30;
-        const cp1x = sx + (Math.random() - 0.5) * 400;
+        const ex = sx + (Math.random() - 0.5) * W * 1.2, ey = H + 30;
+        const cp1x = sx + (Math.random() - 0.5) * 500;
         const cp1y = H * 0.4;
-        const T = 1400, t0 = performance.now();
+        const T = 1500, t0 = performance.now();
+        const color = ["#FFE66D", "#A0D8FF", "#FFFFFF"][i % 3];
         function step(t) {
           const e = Math.min(1, (t - t0) / T);
-          // quadratic bezier
-          const x = (1 - e) * (1 - e) * sx + 2 * (1 - e) * e * cp1x + e * e * ex;
-          const y = (1 - e) * (1 - e) * sy + 2 * (1 - e) * e * cp1y + e * e * ey;
+          const ee = Ease.inOutCubic(e);
+          const x = (1 - ee) * (1 - ee) * sx + 2 * (1 - ee) * ee * cp1x + ee * ee * ex;
+          const y = (1 - ee) * (1 - ee) * sy + 2 * (1 - ee) * ee * cp1y + ee * ee * ey;
           FX.spawn({
-            x, y, life: 1.0, size: 4,
-            color: "#FFE66D", shape: "circle",
-            trail: true, trailMax: 14,
+            x, y, life: 1.0, size: 5,
+            color, shape: "circle", glow: 4,
+            trail: true, trailMax: 18, composite: "lighter",
           });
-          // sparkles
-          if (Math.random() < 0.4) {
+          if (Math.random() < 0.35) {
             FX.spawn({
               x: x + (Math.random() - 0.5) * 20, y: y + (Math.random() - 0.5) * 20,
-              vx: (Math.random() - 0.5) * 100, vy: (Math.random() - 0.5) * 100,
+              vx: (Math.random() - 0.5) * 80, vy: (Math.random() - 0.5) * 80,
               life: 0.6, size: 2 + Math.random() * 2,
               color: "#FFFFFF", shape: "star", points: 4, vrot: 8,
+              composite: "lighter", glow: 2,
             });
           }
           if (e < 1) requestAnimationFrame(step);
         }
         requestAnimationFrame(step);
-      }, i * 220);
+      }, i * 180);
     }
   },
 
-  // 16: PIXEL RAIN — Matrix-style columns of falling color pixels
+  // 16: PIXEL RAIN — matrix-style with bright leader + fading trail pixels
   () => {
-    FX.start(3000);
+    FX.start(3500);
+    ambient("rgba(5,15,30,1)", 0.3, 300, 2400, 900);
     const W = FX.W, H = FX.H;
-    const cols = 30;
+    const cols = 32;
     for (let c = 0; c < cols; c++) {
       const x = (c / cols) * W + (W / cols) * 0.5;
-      const startDelay = Math.random() * 500;
-      const colColors = [PALETTE[c % PALETTE.length], "#FFFFFF"];
-      for (let i = 0; i < 25; i++) {
+      const startDelay = Math.random() * 600;
+      const color = PALETTE[c % PALETTE.length];
+      const speed = 280 + Math.random() * 200;
+      for (let i = 0; i < 28; i++) {
         setTimeout(() => {
+          const isLeader = i === 0;
           FX.spawn({
-            x, y: -10,
-            vy: 250 + Math.random() * 150,
-            life: 2.2,
-            size: 8, color: i === 0 ? "#FFFFFF" : colColors[0],
+            x, y: -10, vy: speed,
+            life: 2.4, size: isLeader ? 10 : 8,
+            color: isLeader ? "#FFFFFF" : color,
             shape: "rect",
-            alpha: i === 0 ? 1 : 0.7 - i * 0.025,
-            composite: "source-over",
+            alpha: isLeader ? 1 : Math.max(0.15, 0.8 - i * 0.025),
+            glow: isLeader ? 3 : 0,
+            composite: isLeader ? "lighter" : "source-over",
           });
         }, startDelay + i * 50);
       }
     }
   },
 
-  // 17: STAR PULSE — concentric mandala pulses outward, big star at center
+  // 17: STAR PULSE — concentric pulses + spiraling stars + central megastar
   () => {
-    FX.start(3500);
+    FX.start(4000);
+    ambient("rgba(30,15,5,1)", 0.22, 400, 2800, 900);
+    vignette(0.4, 3500);
     const W = FX.W, H = FX.H;
     const cx = W / 2, cy = H * 0.4;
-    // glow pulses
-    for (let i = 0; i < 5; i++) {
+
+    // expanding glow rings
+    for (let i = 0; i < 6; i++) {
       setTimeout(() => {
         FX.spawn({
-          x: cx, y: cy, life: 1.6, size: 20,
-          color: ["#FFE66D", "#C96442", "#FFD700", "#D97757", "#FFA94D"][i],
-          shape: "ring", lineW: 5,
+          x: cx, y: cy, life: 1.7, size: 20,
+          color: ["#FFE66D", "#C96442", "#FFD700", "#D97757", "#FFA94D", "#fff"][i],
+          shape: "ring", lineW: 5, glow: 2,
+          composite: "lighter",
           update: (p, dt) => {
-            p.size += 300 * dt;
-            p.alpha = (p.life / p.maxLife) * 0.8;
+            p.size += 320 * dt;
+            p.alpha = (p.life / p.maxLife) * 0.85;
           },
         });
       }, i * 180);
     }
-    // mandala stars rotating
-    for (let i = 0; i < 8; i++) {
-      const a0 = (i / 8) * Math.PI * 2;
+
+    // mandala stars spiraling outward
+    for (let i = 0; i < 10; i++) {
+      const a0 = (i / 10) * Math.PI * 2;
       FX.spawn({
-        x: cx, y: cy, life: 2.5, size: 18,
+        x: cx, y: cy, life: 2.8, size: 18,
         color: GOLD[i % GOLD.length], shape: "star", points: 6, vrot: 3,
+        glow: 3, composite: "lighter",
         update: (p, dt) => {
           const e = (p.maxLife - p.life) / p.maxLife;
-          const r = e * 250;
+          const r = e * 280;
           p.x = cx + Math.cos(a0 + e * 4) * r;
           p.y = cy + Math.sin(a0 + e * 4) * r;
           p.alpha = 1 - e;
         },
       });
     }
-    // center burst star
+
+    // center pulsing megastar with rays
     FX.spawn({
       x: cx, y: cy, life: 2.5, size: 0,
-      color: "#FFE66D", shape: "star", points: 6, vrot: 1,
-      update: (p, dt) => {
+      color: "#FFE066", shape: "star", points: 8, vrot: 0.6,
+      glow: 4, composite: "lighter",
+      update: (p) => {
         const e = (p.maxLife - p.life) / p.maxLife;
-        p.size = Math.sin(e * Math.PI) * 70;
+        p.size = Math.sin(e * Math.PI) * 80;
       },
     });
+
+    // radiating rays
+    for (let i = 0; i < 12; i++) {
+      const a0 = (i / 12) * Math.PI * 2;
+      FX.spawn({
+        x: cx, y: cy, rot: a0, life: 2.0, size: 200,
+        color: "#FFD700" + "55", shape: "ray", lineW: 10,
+        composite: "lighter",
+        update: (p, dt) => {
+          p.rot += dt * 0.3;
+          const e = (p.maxLife - p.life) / p.maxLife;
+          p.alpha = Math.sin(e * Math.PI);
+        },
+      });
+    }
   },
 
-  // 18: BALLOONS — strings, sway, some pop into mini confetti
+  // 18: BALLOONS — drawn CSS balloons with highlights, sway, pops
   () => {
-    FX.start(4500);
+    FX.start(5000);
     const W = FX.W, H = FX.H;
-    const dom = domLayer(4500);
-    const balloonColors = ["#FF6B9D", "#FFD93D", "#6BCB77", "#4D96FF", "#C96442"];
-    for (let i = 0; i < 14; i++) {
+    const dom = domLayer(5000);
+    const balloonColors = [
+      ["#FF6B9D", "#C44569"], ["#FFD93D", "#C99A2E"],
+      ["#6BCB77", "#3E8E4E"], ["#4D96FF", "#2C5FA8"],
+      ["#C96442", "#8E3F22"], ["#A855F7", "#7B3FB8"],
+    ];
+    for (let i = 0; i < 18; i++) {
       setTimeout(() => {
         const x0 = Math.random() * W;
-        const color = balloonColors[i % balloonColors.length];
+        const [light, dark] = balloonColors[i % balloonColors.length];
         const b = document.createElement("div");
-        b.style.cssText = `position:absolute;left:${x0}px;bottom:-100px;width:50px;height:64px;border-radius:50% 50% 50% 50% / 60% 60% 40% 40%;background:radial-gradient(circle at 30% 30%, rgba(255,255,255,0.6), ${color} 50%, ${color});filter:drop-shadow(0 4px 8px rgba(0,0,0,0.15));transition:bottom 4s linear, transform 4s ease-in-out`;
-        b.innerHTML = `<div style="position:absolute;top:100%;left:50%;width:2px;height:50px;background:rgba(0,0,0,0.3);transform:translateX(-50%)"></div>`;
+        b.style.cssText = `position:absolute;left:${x0}px;bottom:-100px;width:54px;height:68px;border-radius:50% 50% 50% 50% / 60% 60% 40% 40%;background:radial-gradient(circle at 30% 28%, rgba(255,255,255,0.85), ${light} 35%, ${dark} 95%);filter:drop-shadow(0 6px 12px rgba(0,0,0,0.18));transition:bottom 4s linear, transform 4s ease-in-out`;
+        b.innerHTML = `<div style="position:absolute;top:100%;left:50%;width:1.5px;height:60px;background:linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.1));transform:translateX(-50%)"></div>
+                       <div style="position:absolute;bottom:-3px;left:50%;width:8px;height:5px;background:${dark};border-radius:50% 50% 30% 30%;transform:translateX(-50%)"></div>`;
         dom.appendChild(b);
-        const sway = (Math.random() - 0.5) * 100;
+        const sway = (Math.random() - 0.5) * 140;
         requestAnimationFrame(() => {
           b.style.bottom = (H + 100) + "px";
-          b.style.transform = `translateX(${sway}px) rotate(${sway * 0.1}deg)`;
+          b.style.transform = `translateX(${sway}px) rotate(${sway * 0.08}deg)`;
         });
-        // some pop midway
+        // pop chance
         if (Math.random() < 0.4) {
           setTimeout(() => {
             const rect = b.getBoundingClientRect();
             const px = rect.left + rect.width / 2, py = rect.top + rect.height / 2;
             b.style.opacity = "0";
-            for (let k = 0; k < 20; k++) {
+            for (let k = 0; k < 26; k++) {
               const a = Math.random() * Math.PI * 2;
-              const sp = 100 + Math.random() * 200;
+              const sp = 120 + Math.random() * 240;
               FX.spawn({
                 x: px, y: py,
                 vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-                gravity: 400, drag: 0.03, life: 1.2,
-                size: 5, color, shape: "rect",
-                vrot: (Math.random() - 0.5) * 12,
-                composite: "source-over",
+                gravity: 420, drag: 0.025, life: 1.2,
+                size: 5, color: k % 2 === 0 ? light : dark,
+                shape: "rect", vrot: (Math.random() - 0.5) * 12, glow: 1.5,
               });
             }
-          }, 1500 + Math.random() * 1500);
+            // pop ring
+            FX.spawn({
+              x: px, y: py, life: 0.4, size: 8,
+              color: light, shape: "ring", lineW: 3,
+              update: (p, dt) => { p.size += 280 * dt; p.alpha = p.life / p.maxLife; },
+              composite: "lighter",
+            });
+          }, 1500 + Math.random() * 1800);
         }
-      }, i * 200);
+      }, i * 180);
     }
   },
 
-  // 19: AURORA — flowing rainbow ribbon + stardust trail
+  // 19: AURORA — flowing multi-band ribbon with wave, parallax stars
   () => {
-    FX.start(3500);
+    FX.start(4000);
+    ambient("rgba(10,30,40,1)", 0.25, 400, 2800, 900);
     const W = FX.W, H = FX.H;
-    const dom = domLayer(3000);
-    const aurora = document.createElement("div");
-    aurora.style.cssText = `position:absolute;left:-30%;top:25%;width:160%;height:160px;background:linear-gradient(90deg,transparent,#C96442,#D97757,#B5882B,#5A8A3A,#4A6FA5,#7B5BA8,#B8466B,transparent);filter:blur(40px);opacity:0.7;transform:skewY(-8deg) translateX(-100%);transition:transform 2.5s cubic-bezier(0.45,0.05,0.55,0.95)`;
-    dom.appendChild(aurora);
-    requestAnimationFrame(() => aurora.style.transform = "skewY(-8deg) translateX(60%)");
-    // sparkle trail following aurora
+    const dom = domLayer(3500);
+
+    // background stars
     for (let i = 0; i < 60; i++) {
+      const s = document.createElement("div");
+      const size = 1 + Math.random() * 2;
+      s.style.cssText = `position:absolute;left:${Math.random() * W}px;top:${Math.random() * H * 0.7}px;width:${size}px;height:${size}px;background:#fff;border-radius:50%;opacity:0;transition:opacity 1s ease-out;box-shadow:0 0 ${size * 3}px rgba(255,255,255,0.8)`;
+      dom.appendChild(s);
+      setTimeout(() => s.style.opacity = "0.9", Math.random() * 1000);
+    }
+
+    // aurora bands (3 layered)
+    [0.7, 0.5, 0.4].forEach((opacity, idx) => {
+      const band = document.createElement("div");
+      band.style.cssText = `position:absolute;left:-30%;top:${22 + idx * 6}%;width:160%;height:${130 - idx * 20}px;background:linear-gradient(90deg,transparent 0%,#5A8A3A 15%,#4A6FA5 35%,#7B5BA8 55%,#C96442 75%,transparent 100%);filter:blur(${50 - idx * 8}px);opacity:0;transform:skewY(-${10 - idx * 2}deg) translateX(-100%) scaleY(${1 + idx * 0.3});transition:transform 2.8s cubic-bezier(0.45,0.05,0.55,0.95), opacity 0.6s`;
+      dom.appendChild(band);
       setTimeout(() => {
-        const progress = i / 60;
+        band.style.opacity = String(opacity);
+        band.style.transform = `skewY(-${10 - idx * 2}deg) translateX(60%) scaleY(${1 + idx * 0.3})`;
+      }, 100 + idx * 150);
+    });
+
+    // sparkle trail moving with aurora
+    for (let i = 0; i < 80; i++) {
+      setTimeout(() => {
+        const progress = i / 80;
         const x = -W * 0.3 + progress * W * 1.6;
-        const y = H * 0.32 + (Math.random() - 0.5) * 120;
+        const y = H * 0.3 + (Math.random() - 0.5) * 140 + Math.sin(progress * 8) * 30;
         FX.spawn({
-          x, y, life: 1.2, size: 2 + Math.random() * 4,
+          x, y, life: 1.3, size: 2.5 + Math.random() * 4,
           color: PALETTE[i % PALETTE.length], shape: "star", points: 4,
-          vrot: 6, vy: -20 - Math.random() * 30,
+          vrot: 6, vy: -25 - Math.random() * 30,
+          glow: 2.5, composite: "lighter",
         });
       }, i * 35);
     }
   },
 
-  // 20: SHREDDED FINALE — full cinematic
+  // 20: SHREDDED FINALE — cinema bars, letter reveal, barrage, gold rain, orbiting trophies
   () => {
-    FX.start(7000);
+    FX.start(8000);
+    ambient("rgba(10,5,5,1)", 0.55, 400, 6500, 1200);
+
     const W = FX.W, H = FX.H;
-    flash("rgba(255,255,255,0.6)", 600);
-    shake(8, 700);
-    // Letter reveal
-    const dom = domLayer(7000);
+    flash("rgba(255,255,255,0.7)", 700);
+    shake(8, 800);
+
+    // cinema bars
+    const dom = domLayer(7800);
+    const barT = document.createElement("div");
+    barT.style.cssText = `position:absolute;left:0;top:0;width:100%;height:0;background:#000;transition:height 0.6s ease-out`;
+    const barB = document.createElement("div");
+    barB.style.cssText = `position:absolute;left:0;bottom:0;width:100%;height:0;background:#000;transition:height 0.6s ease-out`;
+    dom.appendChild(barT); dom.appendChild(barB);
+    setTimeout(() => { barT.style.height = "80px"; barB.style.height = "80px"; }, 100);
+    setTimeout(() => { barT.style.height = "0"; barB.style.height = "0"; }, 6800);
+
+    // letter reveal with gradient + cascading shadow
     const text = "SHREDDED";
     const titleEl = document.createElement("div");
-    titleEl.style.cssText = `position:absolute;left:50%;top:35%;transform:translate(-50%,-50%);display:flex;gap:8px;font-size:64px;font-weight:900;letter-spacing:6px;color:transparent;background:linear-gradient(180deg, #FFD700, #C96442);-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 0 20px rgba(255,215,0,0.6))`;
+    titleEl.style.cssText = `position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);display:flex;gap:6px;font-size:72px;font-weight:900;letter-spacing:6px`;
     text.split("").forEach((ch, i) => {
       const s = document.createElement("span");
       s.textContent = ch;
-      s.style.cssText = `display:inline-block;opacity:0;transform:translateY(40px) scale(0.5);transition:all 0.5s cubic-bezier(0.34,1.56,0.64,1)`;
+      s.style.cssText = `display:inline-block;opacity:0;transform:translateY(60px) scale(0.4) rotate(-15deg);transition:all 0.6s cubic-bezier(0.34,1.56,0.64,1);background:linear-gradient(180deg, #FFE066 0%, #FFD700 40%, #C96442 100%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 30px rgba(255,215,0,0.9)) drop-shadow(0 6px 14px rgba(0,0,0,0.4))`;
       titleEl.appendChild(s);
-      setTimeout(() => { s.style.opacity = "1"; s.style.transform = "none"; }, 300 + i * 100);
+      setTimeout(() => { s.style.opacity = "1"; s.style.transform = "none"; }, 800 + i * 110);
     });
     dom.appendChild(titleEl);
-    // Side cannons
-    setTimeout(() => firework(W * 0.15, H * 0.4, { n: 100, colors: GOLD }), 1200);
-    setTimeout(() => firework(W * 0.85, H * 0.4, { n: 100, colors: GOLD }), 1400);
-    setTimeout(() => firework(W * 0.5, H * 0.5, { n: 140, colors: PALETTE }), 1700);
-    setTimeout(() => firework(W * 0.3, H * 0.3, { n: 80, colors: ["#FF6B9D", "#C44569"] }), 2200);
-    setTimeout(() => firework(W * 0.7, H * 0.3, { n: 80, colors: ["#FF6B9D", "#C44569"] }), 2400);
+    setTimeout(() => { titleEl.style.transition = "opacity 0.6s, transform 0.6s"; titleEl.style.opacity = "0.5"; titleEl.style.transform = "translate(-50%,-50%) scale(0.85)"; }, 5800);
+    setTimeout(() => { titleEl.style.opacity = "0"; }, 6800);
+
+    // firework barrage
+    setTimeout(() => firework(W * 0.15, H * 0.42, { n: 110, colors: GOLD }), 1700);
+    setTimeout(() => firework(W * 0.85, H * 0.42, { n: 110, colors: GOLD }), 1900);
+    setTimeout(() => firework(W * 0.5, H * 0.5, { n: 150, colors: PALETTE }), 2200);
+    setTimeout(() => firework(W * 0.3, H * 0.32, { n: 90, colors: ROSE }), 2700);
+    setTimeout(() => firework(W * 0.7, H * 0.32, { n: 90, colors: ROSE }), 2900);
+    setTimeout(() => firework(W * 0.5, H * 0.25, { n: 130, colors: ["#fff", "#FFE066", "#FFD700"] }), 3400);
+    setTimeout(() => firework(W * 0.2, H * 0.5, { n: 80, colors: GOLD }), 4000);
+    setTimeout(() => firework(W * 0.8, H * 0.5, { n: 80, colors: GOLD }), 4100);
+
     // raining gold confetti
     setTimeout(() => {
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 260; i++) {
         setTimeout(() => {
           FX.spawn({
             x: Math.random() * W, y: -20,
-            vx: (Math.random() - 0.5) * 100, vy: 100 + Math.random() * 150,
-            gravity: 200, drag: 0.01, life: 4,
-            size: 6 + Math.random() * 4,
+            vx: (Math.random() - 0.5) * 100, vy: 80 + Math.random() * 160,
+            gravity: 220, drag: 0.01, life: 4.5,
+            size: 6 + Math.random() * 5,
             color: GOLD[i % GOLD.length], shape: "rect",
-            vrot: (Math.random() - 0.5) * 12,
-            composite: "source-over",
+            vrot: (Math.random() - 0.5) * 14, glow: 1.5,
           });
-        }, i * 15);
+        }, i * 12);
       }
-    }, 2500);
+    }, 2400);
+
     // orbiting trophies (DOM)
     setTimeout(() => {
-      const cx = W / 2, cy = H * 0.5;
-      for (let i = 0; i < 6; i++) {
+      const cx = W / 2, cy = H * 0.55;
+      for (let i = 0; i < 8; i++) {
         const tEl = document.createElement("div");
         tEl.textContent = "🏆";
-        tEl.style.cssText = `position:absolute;left:${cx}px;top:${cy}px;font-size:48px;will-change:transform`;
+        tEl.style.cssText = `position:absolute;left:${cx}px;top:${cy}px;font-size:54px;will-change:transform;filter:drop-shadow(0 0 20px rgba(255,215,0,0.7))`;
         dom.appendChild(tEl);
-        const a0 = (i / 6) * Math.PI * 2;
+        const a0 = (i / 8) * Math.PI * 2;
         const t0 = performance.now();
         function orbit(t) {
-          const e = (t - t0) / 1000;
-          if (e > 3) return;
-          const r = 120 + e * 40;
+          const e = (t - t0) / 3500;
+          if (e > 1) return;
+          const r = 130 + e * 60;
           const ang = a0 + e * Math.PI * 2;
-          tEl.style.transform = `translate(${Math.cos(ang) * r - 24}px, ${Math.sin(ang) * r - 24}px) rotate(${ang}rad)`;
-          tEl.style.opacity = String(1 - e / 3);
+          tEl.style.transform = `translate(${Math.cos(ang) * r - 27}px, ${Math.sin(ang) * r - 27}px) rotate(${ang}rad)`;
+          tEl.style.opacity = String(1 - e);
           requestAnimationFrame(orbit);
         }
         requestAnimationFrame(orbit);
       }
     }, 1500);
+
+    // final flash
+    setTimeout(() => flash("rgba(255,215,0,0.55)", 1000), 5500);
   },
 ];
 
