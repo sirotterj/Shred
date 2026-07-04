@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#F5F4ED">
-<title>Shred 25</title>
+<title>Shred 11</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -182,15 +182,15 @@
 
 <script>
 const CONFIG = {
-  totalDays: 25,
-  totalDeficit: 20000,
+  totalDays: 11,
+  totalDeficit: 8800,
   dailyTarget: 800,
 };
 
 let state = { logs: [] };
 
 // ─── PERSISTENCE ───
-const DB_NAME = "shred25", DB_STORE = "data", DB_KEY = "state";
+const DB_NAME = "shred11", DB_STORE = "data", DB_KEY = "state";
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -217,7 +217,7 @@ async function idbLoad() {
 }
 async function load() {
   let data = null;
-  try { const raw = localStorage.getItem("shred25"); if (raw) data = JSON.parse(raw); } catch {}
+  try { const raw = localStorage.getItem("shred11"); if (raw) data = JSON.parse(raw); } catch {}
   try {
     const idb = await idbLoad();
     if (idb && (!data || (idb.logs?.length || 0) >= (data.logs?.length || 0))) data = idb;
@@ -227,7 +227,7 @@ async function load() {
 function save() {
   const data = { logs: state.logs };
   let ok = false;
-  try { localStorage.setItem("shred25", JSON.stringify(data)); ok = true; } catch {}
+  try { localStorage.setItem("shred11", JSON.stringify(data)); ok = true; } catch {}
   idbSave(data).catch(() => {});
   return ok;
 }
@@ -237,7 +237,7 @@ function exportData() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `shred25-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `shred11-backup-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1680,42 +1680,27 @@ const SURPRISES = [
 // Day 25 is reserved for the SHREDDED finale (index 19).
 // Day 13 (HALFWAY of 25) gets the halfway gates (index 9).
 // Remaining days cycle through the other 18 routines.
+// 11-day mapping: SHREDDED finale on day 11, HALFWAY on day 6.
+// Curated set of the most cinematic scenes.
 const DAY_TO_SURPRISE = [
   0,  // Day 1  — Liftoff
   1,  // Day 2  — Fire
   2,  // Day 3  — Comet shower
   3,  // Day 4  — Heart resonance
   4,  // Day 5  — Coin cascade
-  5,  // Day 6  — Lightning
-  6,  // Day 7  — Sparkle storm
-  7,  // Day 8  — Trophy ascension
-  8,  // Day 9  — Triple mortar
-  10, // Day 10 — Bloom
-  11, // Day 11 — Rocket fuel
-  12, // Day 12 — Disco
-  9,  // Day 13 — HALFWAY gates 🎯
-  13, // Day 14 — Beast mode
-  14, // Day 15 — Shooting stars
-  15, // Day 16 — Pixel rain
-  16, // Day 17 — Star pulse
-  17, // Day 18 — Balloons
-  18, // Day 19 — Aurora
-  0,  // Day 20 — Liftoff (encore)
-  8,  // Day 21 — Triple mortar (encore)
-  13, // Day 22 — Beast mode (encore)
-  7,  // Day 23 — Trophy
-  11, // Day 24 — Rocket fuel
-  19, // Day 25 — SHREDDED 🏆
+  9,  // Day 6  — HALFWAY gates 🎯
+  13, // Day 7  — Beast mode
+  16, // Day 8  — Star pulse
+  7,  // Day 9  — Trophy ascension
+  18, // Day 10 — Aurora
+  19, // Day 11 — SHREDDED 🏆
 ];
 
 const SURPRISE_NAMES = [
-  "Day 1 — Liftoff", "Day 2 — Stoking the fire", "Day 3 — Comet shower", "Day 4 — Heart in it",
-  "Day 5 — Cha-ching", "Day 6 — Lightning", "Day 7 — Sparkle storm", "Day 8 — Trophy preview",
-  "Day 9 — Fireworks", "Day 10 — Bloom", "Day 11 — Rocket fuel", "Day 12 — Disco mode",
-  "Day 13 — HALFWAY 🎯", "Day 14 — Beast mode", "Day 15 — Shooting stars", "Day 16 — Pixel rain",
-  "Day 17 — Star pulse", "Day 18 — Balloons", "Day 19 — Aurora", "Day 20 — Liftoff (encore)",
-  "Day 21 — Triple mortar", "Day 22 — Beast encore", "Day 23 — Trophy ascension",
-  "Day 24 — Rocket fuel", "Day 25 — SHREDDED 🏆",
+  "Day 1 — Liftoff", "Day 2 — Stoking the fire", "Day 3 — Comet shower",
+  "Day 4 — Heart in it", "Day 5 — Cha-ching", "Day 6 — HALFWAY 🎯",
+  "Day 7 — Beast mode", "Day 8 — Star pulse", "Day 9 — Trophy ascension",
+  "Day 10 — Aurora", "Day 11 — SHREDDED 🏆",
 ];
 
 function runSurprise(dayNum) {
@@ -1770,7 +1755,7 @@ window.deleteLog = date => {
 window.doReset = () => {
   if (confirm("Reset ALL data? This cannot be undone.")) {
     state.logs = [];
-    localStorage.removeItem("shred25");
+    localStorage.removeItem("shred11");
     idbSave({ logs: [] });
     render();
     toast("Reset");
@@ -1816,8 +1801,8 @@ function render() {
 
   // Hero
   h += `<div class="hero">
-    <div class="kicker"><span class="pulse-dot"></span>25 Day Challenge</div>
-    <h1>Shred <span class="accent-text">25</span></h1>
+    <div class="kicker"><span class="pulse-dot"></span>11 Day Challenge</div>
+    <h1>Shred <span class="accent-text">11</span></h1>
     <div class="sub">${CONFIG.totalDeficit.toLocaleString()} cal deficit · ~${CONFIG.dailyTarget}/day</div>
   </div>`;
 
@@ -1929,7 +1914,7 @@ function render() {
     h += `<div class="card" style="text-align:center;padding:30px 20px;border:1px dashed var(--bd2);background:transparent">
       <div style="font-size:36px;margin-bottom:8px">🎯</div>
       <div style="font-size:15px;font-weight:700;margin-bottom:6px">Day 1 awaits</div>
-      <div style="font-size:13px;color:var(--dim);line-height:1.6">Log your first deficit. ~${CONFIG.dailyTarget} cal/day for 25 days.<br>Each day brings a new surprise.</div>
+      <div style="font-size:13px;color:var(--dim);line-height:1.6">Log your first deficit. ~${CONFIG.dailyTarget} cal/day for 11 days.<br>Each day brings a new surprise.</div>
     </div>`;
   }
 
@@ -1955,7 +1940,7 @@ function render() {
   </div>`;
 
   h += `<div id="save-status" class="save-flash" style="opacity:0">​</div>`;
-  h += `<div style="text-align:center;padding:8px 0;font-size:10px;color:var(--mu);font-weight:500;letter-spacing:1.5px">SHRED 25</div>`;
+  h += `<div style="text-align:center;padding:8px 0;font-size:10px;color:var(--mu);font-weight:500;letter-spacing:1.5px">SHRED 11</div>`;
 
   app.innerHTML = h;
 }
