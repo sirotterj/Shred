@@ -131,11 +131,12 @@
   }
   .cal-cell:hover { transform: scale(1.12); z-index: 2; }
   .cal-cell .cal-num { font-size: 10px; font-weight: 700; color: var(--mu); line-height: 1; }
-  .cal-cell.hit { background: var(--accent-soft); border-color: var(--accent2); }
-  .cal-cell.hit .cal-num { color: var(--accent); }
-  .cal-cell.miss { background: #F3EEE3; border-color: var(--bd2); }
-  .cal-cell.big { background: var(--green-soft); border-color: var(--green); }
-  .cal-cell.big .cal-num { color: var(--green); }
+  .cal-cell.hit { background: var(--green-soft); border-color: var(--green); }
+  .cal-cell.hit .cal-num { color: var(--green); }
+  .cal-cell.miss { background: #F7E1DB; border-color: #C4553B; }
+  .cal-cell.miss .cal-num { color: #C4553B; }
+  .cal-cell.big { background: #BFD9A0; border-color: #3D6B24; }
+  .cal-cell.big .cal-num { color: #2E5218; }
   .cal-dots { display: flex; gap: 2px; height: 5px; }
   .cal-dot { width: 4px; height: 4px; border-radius: 50%; }
   .cal-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; font-size: 11px; color: var(--dim); font-weight: 600; }
@@ -2631,7 +2632,7 @@ function render() {
     const l = state.logs[d - 1];
     let cls = "", dots = "", title = `Day ${d}`;
     if (l) {
-      cls = l.deficit >= 1500 ? "big" : l.deficit >= CONFIG.dailyTarget ? "hit" : "miss";
+      cls = l.deficit >= 1300 ? "big" : l.deficit >= CONFIG.dailyTarget ? "hit" : "miss";
       title = `Day ${d} · ${l.date} · ${l.deficit >= 0 ? "−" : "+"}${Math.abs(l.deficit).toLocaleString()} cal`
         + (l.gym ? " · gym" : "") + (l.drank ? " · drank" : "")
         + ((l.pushups || l.pullups || l.vups) ? ` · ${l.pushups || 0}/${l.pullups || 0}/${l.vups || 0}` : "");
@@ -2655,8 +2656,9 @@ function render() {
       <span><div class="cal-dot" style="background:var(--green)"></div>gym</span>
       <span><div class="cal-dot" style="background:var(--gold)"></div>exercises hit</span>
       <span><div class="cal-dot" style="background:var(--purple)"></div>drank</span>
-      <span><div style="width:10px;height:10px;border-radius:3px;background:var(--accent-soft);border:1px solid var(--accent2)"></div>target hit</span>
-      <span><div style="width:10px;height:10px;border-radius:3px;background:var(--green-soft);border:1px solid var(--green)"></div>1500+</span>
+      <span><div style="width:10px;height:10px;border-radius:3px;background:var(--green-soft);border:1px solid var(--green)"></div>target hit</span>
+      <span><div style="width:10px;height:10px;border-radius:3px;background:#BFD9A0;border:1px solid #3D6B24"></div>1300+</span>
+      <span><div style="width:10px;height:10px;border-radius:3px;background:#F7E1DB;border:1px solid #C4553B"></div>missed</span>
     </div>
   </div>`;
 
@@ -2718,8 +2720,8 @@ function render() {
     state.logs.slice().reverse().forEach(l => {
       const positive = l.deficit >= 0;
       const sign = positive ? "−" : "+";
-      const valColor = positive ? (l.deficit >= 1500 ? "var(--green)" : "var(--tx)") : "var(--accent)";
-      const accentBar = !positive ? "var(--accent)" : l.deficit >= 1500 ? "var(--green)" : l.deficit >= CONFIG.dailyTarget ? "var(--accent2)" : "var(--gold)";
+      const valColor = positive ? (l.deficit >= 1300 ? "#3D6B24" : l.deficit >= CONFIG.dailyTarget ? "var(--green)" : "#C4553B") : "#C4553B";
+      const accentBar = !positive ? "#C4553B" : l.deficit >= 1300 ? "#3D6B24" : l.deficit >= CONFIG.dailyTarget ? "var(--green)" : "#C4553B";
       h += `<div class="log-entry" style="border-left:3px solid ${accentBar}">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:baseline;gap:8px">
