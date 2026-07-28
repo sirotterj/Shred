@@ -2346,6 +2346,17 @@ window.doLog = () => {
     return;
   }
 
+  // Missed the goal → note is required
+  if (value < CONFIG.dailyTarget && !(notesInput && notesInput.value.trim())) {
+    toast("Missed the goal — add a note explaining why");
+    if (notesInput) {
+      notesInput.style.borderColor = "var(--accent)";
+      notesInput.placeholder = "required: what happened?";
+      notesInput.focus();
+    }
+    return;
+  }
+
   const num = id => {
     const el = document.getElementById(id);
     const v = el ? parseInt(el.value) : NaN;
@@ -2745,6 +2756,23 @@ function render() {
       <div style="font-size:48px">🏆</div>
       <div style="font-size:22px;font-weight:800;color:var(--accent);margin-top:6px">Shredded.</div>
       <div style="font-size:13px;color:var(--dim);margin-top:4px">${CONFIG.totalDeficit.toLocaleString()} cal cleared. ${lbsLost} lbs lost.</div>
+    </div>`;
+  }
+
+  // Missed days — accountability log
+  const missed = state.logs.filter(l => l.deficit < CONFIG.dailyTarget);
+  if (missed.length) {
+    h += `<div class="card" style="margin-top:18px;border-color:#E8D5C5">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+        <div class="label" style="margin-bottom:0;color:var(--accent)">Missed days (${missed.length})</div>
+        <div class="mono" style="font-size:11px;color:var(--mu)">${((1 - missed.length / state.logs.length) * 100).toFixed(0)}% hit rate</div>
+      </div>
+      ${missed.slice().reverse().map(l => `
+        <div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);align-items:baseline">
+          <span class="mono" style="font-size:11px;color:var(--mu);white-space:nowrap">d${l.day} · ${l.date}</span>
+          <span class="mono" style="font-size:12px;font-weight:700;color:var(--accent);white-space:nowrap">${l.deficit >= 0 ? "−" : "+"}${Math.abs(l.deficit).toLocaleString()}</span>
+          <span style="font-size:12px;color:var(--tx2);flex:1">${l.notes || "<i style='color:var(--mu)'>no note</i>"}</span>
+        </div>`).join("")}
     </div>`;
   }
 
