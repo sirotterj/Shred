@@ -142,6 +142,10 @@
   .cal-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; font-size: 11px; color: var(--dim); font-weight: 600; }
   .cal-legend span { display: inline-flex; align-items: center; gap: 5px; }
 
+  /* Chart hover points */
+  .cpt circle { transition: r 0.12s, opacity 0.12s; }
+  .cpt:hover circle { r: 5; opacity: 1 !important; }
+
   /* Toast */
   .toast {
     position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-150%);
@@ -2603,7 +2607,28 @@ function render() {
     const dots = wPts.map(([d, w]) =>
       `<circle cx="${X(d)}" cy="${Y(w)}" r="4" fill="var(--green)" stroke="var(--card)" stroke-width="1.5"/>`
     ).join("");
-    const startDot = `<circle cx="${X(0)}" cy="${Y(CONFIG.startWeight)}" r="3.5" fill="var(--tx)" stroke="var(--card)" stroke-width="1.5"/>`;
+    const startDot = `<circle cx="${X(0)}" cy="${Y(CONFIG.startWeight)}" r="3.5" fill="var(--tx)" stroke="var(--card)" stroke-width="1.5"><title>Day 0 · start ${CONFIG.startWeight} lbs</title></circle>`;
+    // per-day hover points: visible dot on est/projected value, tooltip with all values
+    let dayPts = "";
+    const weighByDay = {};
+    state.weighIns.forEach(x => { weighByDay[dayForDate(x.date)] = x.weight; });
+    for (let d = 1; d <= CONFIG.totalDays; d++) {
+      const targetW = CONFIG.startWeight + (targetEnd - CONFIG.startWeight) * (d / CONFIG.totalDays);
+      const logged = d <= daysLogged;
+      let w, kind;
+      if (logged) { w = estPts[d][1]; kind = "est"; }
+      else if (daysLogged > 0) { w = CONFIG.startWeight - (avgPerDay * d) / 3500; kind = "proj"; }
+      else { w = targetW; kind = "target"; }
+      const lg = logged ? state.logs[d - 1] : null;
+      const tip = `Day ${d}`
+        + (lg ? ` · ${lg.date} · deficit ${lg.deficit >= 0 ? "−" : "+"}${Math.abs(lg.deficit).toLocaleString()}` : "")
+        + ` · ${kind} ${w.toFixed(1)} lbs · target ${targetW.toFixed(1)}`
+        + (weighByDay[d] !== undefined ? ` · actual ${weighByDay[d]}` : "");
+      const fill = logged ? "var(--accent)" : "var(--accent2)";
+      const op = logged ? 0.9 : 0.35;
+      dayPts += `<g class="cpt"><rect x="${X(d) - plotW / CONFIG.totalDays / 2}" y="${T}" width="${plotW / CONFIG.totalDays}" height="${plotH}" fill="transparent"><title>${tip}</title></rect>
+        <circle cx="${X(d)}" cy="${Y(w)}" r="${logged ? 2.5 : 1.6}" fill="${fill}" opacity="${op}" pointer-events="none"/></g>`;
+    }
     const endLabel = `<text x="${X(CONFIG.totalDays) - 4}" y="${Y(targetEnd) - 6}" text-anchor="end" font-size="9" fill="var(--dim)" font-family="JetBrains Mono, monospace">goal ${targetEnd.toFixed(0)}</text>`;
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
@@ -2611,7 +2636,7 @@ function render() {
         <div class="mono" style="font-size:12px;color:var(--dim)">est now ${estWeight.toFixed(1)} · proj d60 ${projEnd.toFixed(1)}</div>
       </div>
       <svg viewBox="0 0 ${CW} ${CH}" style="width:100%;height:auto;display:block">
-        ${grid}${ticks}${xticks}${targetLine}${estPath}${projLine}${actualLine}${dots}${startDot}${endLabel}
+        ${grid}${ticks}${xticks}${targetLine}${estPath}${projLine}${actualLine}${dayPts}${dots}${startDot}${endLabel}
       </svg>
       <div class="cal-legend" style="margin-top:8px">
         <span><div style="width:14px;height:2px;background:var(--accent)"></div>est (deficits)</span>
