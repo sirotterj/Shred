@@ -145,6 +145,29 @@
   /* Chart hover points */
   .cpt circle { transition: r 0.12s, opacity 0.12s; }
   .cpt:hover circle { r: 5; opacity: 1 !important; }
+  .cpt:hover rect { fill: rgba(201,100,66,0.06); }
+
+  /* Chart tooltip */
+  .chart-tip {
+    position: fixed; z-index: 300; pointer-events: none;
+    background: var(--card); border: 1px solid var(--bd2); border-radius: 12px;
+    padding: 10px 12px; box-shadow: 0 8px 28px rgba(30,25,20,0.16);
+    font-size: 12px; min-width: 150px;
+    opacity: 0; transform: translateY(4px) scale(0.97);
+    transition: opacity 0.14s ease-out, transform 0.14s ease-out;
+  }
+  .chart-tip.show { opacity: 1; transform: none; }
+  .chart-tip .tip-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-weight: 700; color: var(--tx); margin-bottom: 6px; gap: 12px;
+  }
+  .chart-tip .tip-head .tip-date { font-weight: 500; color: var(--mu); font-size: 10px; }
+  .chart-tip .tip-row {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 14px; padding: 2.5px 0; color: var(--dim); font-weight: 500;
+  }
+  .chart-tip .tip-row b { color: var(--tx); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+  .chart-tip .tip-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
 
   /* Toast */
   .toast {
@@ -2607,7 +2630,7 @@ function render() {
     const dots = wPts.map(([d, w]) =>
       `<circle cx="${X(d)}" cy="${Y(w)}" r="4" fill="var(--green)" stroke="var(--card)" stroke-width="1.5"/>`
     ).join("");
-    const startDot = `<circle cx="${X(0)}" cy="${Y(CONFIG.startWeight)}" r="3.5" fill="var(--tx)" stroke="var(--card)" stroke-width="1.5"><title>Day 0 · start ${CONFIG.startWeight} lbs</title></circle>`;
+    const startDot = `<g class="cpt"><rect data-day="0" data-kind="est" data-w="${CONFIG.startWeight.toFixed(1)}" data-target="${CONFIG.startWeight.toFixed(1)}" x="${X(0) - plotW / CONFIG.totalDays / 2}" y="${T}" width="${plotW / CONFIG.totalDays}" height="${plotH}" fill="transparent"/><circle cx="${X(0)}" cy="${Y(CONFIG.startWeight)}" r="3.5" fill="var(--tx)" stroke="var(--card)" stroke-width="1.5" pointer-events="none"/></g>`;
     // per-day hover points: visible dot on est/projected value, tooltip with all values
     let dayPts = "";
     const weighByDay = {};
@@ -2620,13 +2643,13 @@ function render() {
       else if (daysLogged > 0) { w = CONFIG.startWeight - (avgPerDay * d) / 3500; kind = "proj"; }
       else { w = targetW; kind = "target"; }
       const lg = logged ? state.logs[d - 1] : null;
-      const tip = `Day ${d}`
-        + (lg ? ` · ${lg.date} · deficit ${lg.deficit >= 0 ? "−" : "+"}${Math.abs(lg.deficit).toLocaleString()}` : "")
-        + ` · ${kind} ${w.toFixed(1)} lbs · target ${targetW.toFixed(1)}`
-        + (weighByDay[d] !== undefined ? ` · actual ${weighByDay[d]}` : "");
       const fill = logged ? "var(--accent)" : "var(--accent2)";
       const op = logged ? 0.9 : 0.35;
-      dayPts += `<g class="cpt"><rect x="${X(d) - plotW / CONFIG.totalDays / 2}" y="${T}" width="${plotW / CONFIG.totalDays}" height="${plotH}" fill="transparent"><title>${tip}</title></rect>
+      const attrs = `data-day="${d}"`
+        + (lg ? ` data-date="${lg.date}" data-deficit="${lg.deficit}"` : "")
+        + ` data-kind="${kind}" data-w="${w.toFixed(1)}" data-target="${targetW.toFixed(1)}"`
+        + (weighByDay[d] !== undefined ? ` data-actual="${weighByDay[d]}"` : "");
+      dayPts += `<g class="cpt"><rect ${attrs} x="${X(d) - plotW / CONFIG.totalDays / 2}" y="${T}" width="${plotW / CONFIG.totalDays}" height="${plotH}" fill="transparent"/>
         <circle cx="${X(d)}" cy="${Y(w)}" r="${logged ? 2.5 : 1.6}" fill="${fill}" opacity="${op}" pointer-events="none"/></g>`;
     }
     const endLabel = `<text x="${X(CONFIG.totalDays) - 4}" y="${Y(targetEnd) - 6}" text-anchor="end" font-size="9" fill="var(--dim)" font-family="JetBrains Mono, monospace">goal ${targetEnd.toFixed(0)}</text>`;
@@ -2820,6 +2843,46 @@ function render() {
 
   app.innerHTML = h;
 }
+
+// ─── CHART TOOLTIP (delegated, survives re-renders) ───
+const chartTip = document.createElement("div");
+chartTip.className = "chart-tip";
+document.body.appendChild(chartTip);
+
+function positionTip(e) {
+  const pad = 14;
+  const tw = chartTip.offsetWidth || 160, th = chartTip.offsetHeight || 80;
+  let x = e.clientX + pad, y = e.clientY - th - pad;
+  if (x + tw > window.innerWidth - 8) x = e.clientX - tw - pad;
+  if (y < 8) y = e.clientY + pad;
+  chartTip.style.left = x + "px";
+  chartTip.style.top = y + "px";
+}
+
+document.addEventListener("mouseover", e => {
+  const r = e.target.closest?.(".cpt rect") || (e.target.matches?.(".cpt rect") ? e.target : null);
+  if (!r) return;
+  const d = r.dataset;
+  const kindLabel = { est: "Est. weight", proj: "Projected", target: "On target" }[d.kind] || "Weight";
+  const kindColor = d.kind === "est" ? "var(--accent)" : d.kind === "proj" ? "var(--accent2)" : "var(--bd2)";
+  const defNum = d.deficit !== undefined ? parseInt(d.deficit) : null;
+  const defColor = defNum === null ? "" : defNum >= 1300 ? "#3D6B24" : defNum >= CONFIG.dailyTarget ? "var(--green)" : "#C4553B";
+  chartTip.innerHTML = `
+    <div class="tip-head">Day ${d.day}${d.date ? `<span class="tip-date">${d.date}</span>` : ""}</div>
+    ${defNum !== null ? `<div class="tip-row"><span><span class="tip-dot" style="background:${defColor}"></span>Deficit</span><b style="color:${defColor}">${defNum >= 0 ? "−" : "+"}${Math.abs(defNum).toLocaleString()}</b></div>` : ""}
+    <div class="tip-row"><span><span class="tip-dot" style="background:${kindColor}"></span>${kindLabel}</span><b>${d.w} lbs</b></div>
+    <div class="tip-row"><span><span class="tip-dot" style="background:var(--bd2)"></span>Target path</span><b>${d.target} lbs</b></div>
+    ${d.actual !== undefined ? `<div class="tip-row"><span><span class="tip-dot" style="background:var(--green)"></span>Weigh-in</span><b style="color:var(--green)">${d.actual} lbs</b></div>` : ""}`;
+  chartTip.classList.add("show");
+  positionTip(e);
+});
+document.addEventListener("mousemove", e => {
+  if (chartTip.classList.contains("show")) positionTip(e);
+});
+document.addEventListener("mouseout", e => {
+  const r = e.target.closest?.(".cpt");
+  if (r) chartTip.classList.remove("show");
+});
 
 (async () => { await load(); render(); })();
 </script>
