@@ -2472,19 +2472,42 @@ function render() {
   const td = state.logs.reduce((s, l) => s + l.deficit, 0);
   const daysLogged = state.logs.length;
   const daysLeft = Math.max(0, CONFIG.totalDays - daysLogged);
-  const pct = (td / CONFIG.totalDeficit) * 100;
+  const goalWeight = CONFIG.startWeight - CONFIG.totalDeficit / 3500;
+
+  const dayForDate = (date) => {
+    const match = state.logs.find(l => l.date === date);
+    if (match) return match.day;
+    if (!state.logs.length) return 0;
+    const d0 = new Date(state.logs[0].date + "T00:00:00");
+    const d1 = new Date(date + "T00:00:00");
+    return Math.max(0, Math.min(CONFIG.totalDays, Math.round((d1 - d0) / 86400000) + 1));
+  };
+
+  // ── Re-anchoring: the scale overrides the calorie model ──
+  // Est. weight = last weigh-in − deficits logged since it (÷3500).
+  const lastWeigh = state.weighIns.length ? state.weighIns[state.weighIns.length - 1] : null;
+  const anchorDay = lastWeigh ? dayForDate(lastWeigh.date) : 0;
+  const anchorWeight = lastWeigh ? lastWeigh.weight : CONFIG.startWeight;
+  const defSinceAnchor = state.logs.filter(l => l.day > anchorDay).reduce((s, l) => s + l.deficit, 0);
+  const estWeight = anchorWeight - defSinceAnchor / 3500;
+
+  const lbsLostNum = CONFIG.startWeight - estWeight;
+  const lbsLost = lbsLostNum.toFixed(1);
+  const doneCal = lbsLostNum * 3500;
+  const pct = (doneCal / CONFIG.totalDeficit) * 100;
   const pctClamped = Math.min(100, Math.max(0, pct));
   const overshoot = Math.max(0, pct - 100);
-  const remaining = Math.max(0, CONFIG.totalDeficit - td);
+  const remaining = Math.max(0, Math.round((estWeight - goalWeight) * 3500));
   const dailyNeeded = daysLeft > 0 ? Math.round(remaining / daysLeft) : 0;
-  const expected = daysLogged * CONFIG.dailyTarget;
-  const diff = td - expected;
+  // ahead/behind vs the target path line at today's position
+  const targetToday = CONFIG.startWeight + (goalWeight - CONFIG.startWeight) * (daysLogged / CONFIG.totalDays);
+  const diff = Math.round((targetToday - estWeight) * 3500);
   const ahead = diff >= 0;
   const dayPct = (daysLogged / CONFIG.totalDays) * 100;
-  const lbsLost = (td / 3500).toFixed(1);
   const avgPerDay = daysLogged > 0 ? td / daysLogged : 0;
-  const projectedTotal = Math.round(avgPerDay * CONFIG.totalDays);
-  const projectedLbs = (projectedTotal / 3500).toFixed(1);
+  const projEndWeight = daysLogged > 0 ? estWeight - (avgPerDay * daysLeft) / 3500 : goalWeight;
+  const projectedTotal = Math.round((CONFIG.startWeight - projEndWeight) * 3500);
+  const projectedLbs = (CONFIG.startWeight - projEndWeight).toFixed(1);
 
   const app = document.getElementById("app");
   let h = "";
@@ -2502,7 +2525,7 @@ function render() {
       <div>
         <div class="label" style="margin-bottom:4px">Lbs lost (est.)</div>
         <div class="lbs-headline">${lbsLost}<span style="font-size:18px;color:var(--dim);font-weight:600;margin-left:4px">lbs</span></div>
-        <div style="font-size:12px;color:var(--dim);font-weight:600;margin-top:4px">${CONFIG.startWeight} → <span style="color:var(--accent)">${(CONFIG.startWeight - td / 3500).toFixed(1)}</span> · goal ${(CONFIG.startWeight - CONFIG.totalDeficit / 3500).toFixed(0)}</div>
+        <div style="font-size:12px;color:var(--dim);font-weight:600;margin-top:4px">${CONFIG.startWeight} → <span style="color:var(--accent)">${estWeight.toFixed(1)}</span> · goal ${goalWeight.toFixed(0)}</div>
       </div>
       <div style="text-align:right">
         <div class="label" style="margin-bottom:4px">Deficit</div>
@@ -2532,7 +2555,7 @@ function render() {
     <div class="card" style="padding:16px">
       <div class="label">Daily Target</div>
       <div class="mono" style="font-size:26px;font-weight:700;line-height:1">${dailyNeeded}<span style="font-size:13px;color:var(--dim);font-weight:500;margin-left:4px">cal</span></div>
-      <div style="font-size:12px;color:${aheadColor};margin-top:6px;font-weight:600">${ahead ? '↑' : '↓'} ${Math.abs(diff).toLocaleString()} ${ahead ? 'ahead' : 'behind'}</div>
+      <div style="font-size:12px;color:${aheadColor};margin-top:6px;font-weight:600">${ahead ? '↑' : '↓'} ${Math.abs(diff).toLocaleString()} cal ${ahead ? 'ahead of' : 'behind'} path</div>
     </div>
   </div>`;
 
@@ -2551,29 +2574,25 @@ function render() {
   }
 
   // Weight tracking
-  const estWeight = CONFIG.startWeight - td / 3500;
-  const lastWeigh = state.weighIns.length ? state.weighIns[state.weighIns.length - 1] : null;
   const weighDue = daysLogged >= (state.weighIns.length + 1) * CONFIG.weighEvery;
-  const dayForDate = (date) => {
-    const match = state.logs.find(l => l.date === date);
-    if (match) return match.day;
-    if (!state.logs.length) return 0;
-    const d0 = new Date(state.logs[0].date + "T00:00:00");
-    const d1 = new Date(date + "T00:00:00");
-    return Math.max(0, Math.min(CONFIG.totalDays, Math.round((d1 - d0) / 86400000) + 1));
-  };
 
   // Weight chart — projected vs target vs actual, out to 60 days
   h += (() => {
     const CW = 460, CH = 220, L = 38, R = 12, T = 14, B = 26;
     const plotW = CW - L - R, plotH = CH - T - B;
-    const targetEnd = CONFIG.startWeight - CONFIG.totalDeficit / 3500;
-    // estimated series from cumulative deficits
-    let cum = 0;
-    const estPts = [[0, CONFIG.startWeight]];
-    state.logs.forEach(l => { cum += l.deficit; estPts.push([l.day, CONFIG.startWeight - cum / 3500]); });
-    // projection at current pace
-    const projEnd = daysLogged > 0 ? CONFIG.startWeight - (avgPerDay * CONFIG.totalDays) / 3500 : targetEnd;
+    const targetEnd = goalWeight;
+    // estimated series — re-anchors to the scale at each weigh-in
+    const anchorByDay = {};
+    state.weighIns.forEach(x => { anchorByDay[dayForDate(x.date)] = x.weight; });
+    let wRun = anchorByDay[0] !== undefined ? anchorByDay[0] : CONFIG.startWeight;
+    const estPts = [[0, wRun]];
+    state.logs.forEach(l => {
+      wRun -= l.deficit / 3500;
+      if (anchorByDay[l.day] !== undefined) wRun = anchorByDay[l.day];
+      estPts.push([l.day, wRun]);
+    });
+    // projection at current pace, from the re-anchored current weight
+    const projEnd = projEndWeight;
     const actualW = state.weighIns.map(x => x.weight);
     const yMin = Math.min(targetEnd, projEnd, ...actualW, CONFIG.startWeight) - 2;
     const yMax = Math.max(CONFIG.startWeight, ...actualW) + 2;
@@ -2619,7 +2638,7 @@ function render() {
       const logged = d <= daysLogged;
       let w, kind;
       if (logged) { w = estPts[d][1]; kind = "est"; }
-      else if (daysLogged > 0) { w = CONFIG.startWeight - (avgPerDay * d) / 3500; kind = "proj"; }
+      else if (daysLogged > 0) { w = estWeight - (avgPerDay * (d - daysLogged)) / 3500; kind = "proj"; }
       else { w = targetW; kind = "target"; }
       const lg = logged ? state.logs[d - 1] : null;
       const fill = logged ? "var(--accent)" : "var(--accent2)";
