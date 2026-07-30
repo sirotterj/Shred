@@ -2591,6 +2591,10 @@ function render() {
       if (anchorByDay[l.day] !== undefined) wRun = anchorByDay[l.day];
       estPts.push([l.day, wRun]);
     });
+    // if the latest weigh-in is past the last logged day, extend the real line to it
+    if (lastWeigh && anchorDay > (estPts[estPts.length - 1][0] || 0)) {
+      estPts.push([anchorDay, anchorWeight]);
+    }
     // projection at current pace, from the re-anchored current weight
     const projEnd = projEndWeight;
     const actualW = state.weighIns.map(x => x.weight);
@@ -2618,7 +2622,7 @@ function render() {
     // projection (dashed accent from last est point to day 60)
     const lastEst = estPts[estPts.length - 1];
     const projLine = daysLogged > 0 && daysLogged < CONFIG.totalDays
-      ? `<line x1="${X(lastEst[0])}" y1="${Y(lastEst[1])}" x2="${X(CONFIG.totalDays)}" y2="${Y(projEnd)}" stroke="var(--accent2)" stroke-width="1.8" stroke-dasharray="3,4" opacity="0.8"/>`
+      ? `<line x1="${X(lastEst[0])}" y1="${Y(lastEst[1])}" x2="${X(CONFIG.totalDays)}" y2="${Y(projEnd)}" stroke="var(--accent2)" stroke-width="2.2" stroke-dasharray="0.5,6" stroke-linecap="round" opacity="0.9"/>`
       : "";
     // actual weigh-in dots + connecting line
     const wPts = state.weighIns.map(x => [dayForDate(x.date), x.weight]);
@@ -2660,8 +2664,8 @@ function render() {
         ${grid}${ticks}${xticks}${targetLine}${estPath}${projLine}${actualLine}${dayPts}${dots}${startDot}${endLabel}
       </svg>
       <div class="cal-legend" style="margin-top:8px">
-        <span><div style="width:14px;height:2px;background:var(--accent)"></div>est (deficits)</span>
-        <span><div style="width:14px;height:0;border-top:2px dashed var(--accent2)"></div>projected</span>
+        <span><div style="width:14px;height:2px;background:var(--accent)"></div>real weight</span>
+        <span><div style="width:14px;height:0;border-top:2px dotted var(--accent2)"></div>projected</span>
         <span><div style="width:14px;height:0;border-top:2px dashed var(--bd2)"></div>target</span>
         <span><div class="cal-dot" style="background:var(--green);width:7px;height:7px"></div>actual weigh-in</span>
       </div>
