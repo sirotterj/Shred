@@ -2576,33 +2576,39 @@ function render() {
   // Weight tracking
   const weighDue = daysLogged >= (state.weighIns.length + 1) * CONFIG.weighEvery;
 
-  // Weight chart — projected vs target vs actual, out to 60 days
+  // Weight chart — two projections: calorie model (orange) vs scale trend (green)
   h += (() => {
     const CW = 460, CH = 220, L = 38, R = 12, T = 14, B = 26;
     const plotW = CW - L - R, plotH = CH - T - B;
     const targetEnd = goalWeight;
-    // estimated series — re-anchors to the scale at each weigh-in
-    const anchorByDay = {};
-    state.weighIns.forEach(x => { anchorByDay[dayForDate(x.date)] = x.weight; });
-    let wRun = anchorByDay[0] !== undefined ? anchorByDay[0] : CONFIG.startWeight;
-    const estPts = [[0, wRun]];
-    state.logs.forEach(l => {
-      wRun -= l.deficit / 3500;
-      if (anchorByDay[l.day] !== undefined) wRun = anchorByDay[l.day];
-      estPts.push([l.day, wRun]);
-    });
-    // if the latest weigh-in is past the last logged day, extend the real line to it
-    if (lastWeigh && anchorDay > (estPts[estPts.length - 1][0] || 0)) {
-      estPts.push([anchorDay, anchorWeight]);
+
+    // ── Calorie model: pure deficits from start weight ──
+    let cum = 0;
+    const modelPts = [[0, CONFIG.startWeight]];
+    state.logs.forEach(l => { cum += l.deficit; modelPts.push([l.day, CONFIG.startWeight - cum / 3500]); });
+    const modelNow = CONFIG.startWeight - td / 3500;
+    const modelProjEnd = daysLogged > 0 ? CONFIG.startWeight - (avgPerDay * CONFIG.totalDays) / 3500 : targetEnd;
+
+    // ── Scale trend: least-squares through (day 0, start) + weigh-ins ──
+    const wPts = state.weighIns.map(x => [dayForDate(x.date), x.weight]);
+    let scaleSlope = null, scaleIntercept = null, scaleProjEnd = null;
+    if (wPts.length >= 1) {
+      const rpts = [[0, CONFIG.startWeight], ...wPts];
+      const n = rpts.length;
+      const mx = rpts.reduce((s, p) => s + p[0], 0) / n;
+      const my = rpts.reduce((s, p) => s + p[1], 0) / n;
+      const den = rpts.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
+      scaleSlope = den > 0 ? rpts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / den : 0;
+      scaleIntercept = my - scaleSlope * mx;
+      scaleProjEnd = scaleIntercept + scaleSlope * CONFIG.totalDays;
     }
-    // projection at current pace, from the re-anchored current weight
-    const projEnd = projEndWeight;
+
     const actualW = state.weighIns.map(x => x.weight);
-    const yMin = Math.min(targetEnd, projEnd, ...actualW, CONFIG.startWeight) - 2;
+    const yMin = Math.min(targetEnd, modelProjEnd, scaleProjEnd ?? targetEnd, ...actualW, CONFIG.startWeight) - 2;
     const yMax = Math.max(CONFIG.startWeight, ...actualW) + 2;
     const X = d => L + (d / CONFIG.totalDays) * plotW;
     const Y = w => T + (1 - (w - yMin) / (yMax - yMin)) * plotH;
-    // gridlines: 4 y ticks
+
     let grid = "", ticks = "";
     for (let i = 0; i <= 4; i++) {
       const w = yMin + ((yMax - yMin) * i) / 4;
@@ -2613,61 +2619,71 @@ function render() {
     [0, 15, 30, 45, 60].forEach(d => {
       xticks += `<text x="${X(d)}" y="${CH - 8}" text-anchor="middle" font-size="9" fill="var(--mu)" font-family="JetBrains Mono, monospace">${d}</text>`;
     });
+
     // target path (dashed gray)
     const targetLine = `<line x1="${X(0)}" y1="${Y(CONFIG.startWeight)}" x2="${X(CONFIG.totalDays)}" y2="${Y(targetEnd)}" stroke="var(--bd2)" stroke-width="1.5" stroke-dasharray="5,4"/>`;
-    // est path (solid accent)
-    const estPath = estPts.length > 1
-      ? `<polyline points="${estPts.map(([d, w]) => X(d) + "," + Y(w)).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`
+
+    // calorie model: solid to today, dotted projection to day 60
+    const modelPath = modelPts.length > 1
+      ? `<polyline points="${modelPts.map(([d, w]) => X(d) + "," + Y(w)).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`
       : "";
-    // projection (dashed accent from last est point to day 60)
-    const lastEst = estPts[estPts.length - 1];
-    const projLine = daysLogged > 0 && daysLogged < CONFIG.totalDays
-      ? `<line x1="${X(lastEst[0])}" y1="${Y(lastEst[1])}" x2="${X(CONFIG.totalDays)}" y2="${Y(projEnd)}" stroke="var(--accent2)" stroke-width="2.2" stroke-dasharray="0.5,6" stroke-linecap="round" opacity="0.9"/>`
+    const lastModel = modelPts[modelPts.length - 1];
+    const modelProjLine = daysLogged > 0 && daysLogged < CONFIG.totalDays
+      ? `<line x1="${X(lastModel[0])}" y1="${Y(lastModel[1])}" x2="${X(CONFIG.totalDays)}" y2="${Y(modelProjEnd)}" stroke="var(--accent)" stroke-width="2" stroke-dasharray="0.5,6" stroke-linecap="round" opacity="0.75"/>`
       : "";
-    // actual weigh-in dots + connecting line
-    const wPts = state.weighIns.map(x => [dayForDate(x.date), x.weight]);
-    const actualLine = wPts.length > 1
-      ? `<polyline points="${X(0)},${Y(CONFIG.startWeight)} ${wPts.map(([d, w]) => X(d) + "," + Y(w)).join(" ")}" fill="none" stroke="var(--green)" stroke-width="2" stroke-linejoin="round" opacity="0.9"/>`
+
+    // scale trend: solid green through weigh-ins, dotted regression to day 60
+    const scalePath = wPts.length >= 1
+      ? `<polyline points="${X(0)},${Y(CONFIG.startWeight)} ${wPts.map(([d, w]) => X(d) + "," + Y(w)).join(" ")}" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`
       : "";
+    const lastW2 = wPts.length ? wPts[wPts.length - 1] : null;
+    const scaleProjLine = lastW2 && lastW2[0] < CONFIG.totalDays
+      ? `<line x1="${X(lastW2[0])}" y1="${Y(lastW2[1])}" x2="${X(CONFIG.totalDays)}" y2="${Y(scaleProjEnd)}" stroke="var(--green)" stroke-width="2" stroke-dasharray="0.5,6" stroke-linecap="round" opacity="0.75"/>`
+      : "";
+
+    // weigh-in dots
     const dots = wPts.map(([d, w]) =>
       `<circle cx="${X(d)}" cy="${Y(w)}" r="4" fill="var(--green)" stroke="var(--card)" stroke-width="1.5"/>`
     ).join("");
-    const startDot = `<g class="cpt"><rect data-day="0" data-kind="est" data-w="${CONFIG.startWeight.toFixed(1)}" data-target="${CONFIG.startWeight.toFixed(1)}" x="${X(0) - plotW / CONFIG.totalDays / 2}" y="${T}" width="${plotW / CONFIG.totalDays}" height="${plotH}" fill="transparent"/><circle cx="${X(0)}" cy="${Y(CONFIG.startWeight)}" r="3.5" fill="var(--tx)" stroke="var(--card)" stroke-width="1.5" pointer-events="none"/></g>`;
-    // per-day hover points: visible dot on est/projected value, tooltip with all values
+    const startDot = `<g class="cpt"><rect data-day="0" data-model="${CONFIG.startWeight.toFixed(1)}" data-target="${CONFIG.startWeight.toFixed(1)}" x="${X(0) - plotW / CONFIG.totalDays / 2}" y="${T}" width="${plotW / CONFIG.totalDays}" height="${plotH}" fill="transparent"/><circle cx="${X(0)}" cy="${Y(CONFIG.startWeight)}" r="3.5" fill="var(--tx)" stroke="var(--card)" stroke-width="1.5" pointer-events="none"/></g>`;
+
+    // day-60 endpoint labels for both projections
+    let endLabels = `<text x="${X(CONFIG.totalDays) - 4}" y="${Y(targetEnd) + (targetEnd > (scaleProjEnd ?? 999) ? -6 : 11)}" text-anchor="end" font-size="9" fill="var(--dim)" font-family="JetBrains Mono, monospace">goal ${targetEnd.toFixed(0)}</text>`;
+    if (daysLogged > 0) endLabels += `<text x="${X(CONFIG.totalDays) - 4}" y="${Y(modelProjEnd) - 6}" text-anchor="end" font-size="9" font-weight="700" fill="var(--accent)" font-family="JetBrains Mono, monospace">${modelProjEnd.toFixed(1)}</text>`;
+    if (scaleProjEnd !== null) endLabels += `<text x="${X(CONFIG.totalDays) - 4}" y="${Y(scaleProjEnd) + 12}" text-anchor="end" font-size="9" font-weight="700" fill="var(--green)" font-family="JetBrains Mono, monospace">${scaleProjEnd.toFixed(1)}</text>`;
+
+    // per-day hover points
     let dayPts = "";
     const weighByDay = {};
     state.weighIns.forEach(x => { weighByDay[dayForDate(x.date)] = x.weight; });
     for (let d = 1; d <= CONFIG.totalDays; d++) {
       const targetW = CONFIG.startWeight + (targetEnd - CONFIG.startWeight) * (d / CONFIG.totalDays);
       const logged = d <= daysLogged;
-      let w, kind;
-      if (logged) { w = estPts[d][1]; kind = "est"; }
-      else if (daysLogged > 0) { w = estWeight - (avgPerDay * (d - daysLogged)) / 3500; kind = "proj"; }
-      else { w = targetW; kind = "target"; }
+      const mW = logged ? modelPts[d][1] : (daysLogged > 0 ? modelNow - (avgPerDay * (d - daysLogged)) / 3500 : targetW);
+      const sW = scaleSlope !== null ? scaleIntercept + scaleSlope * d : null;
       const lg = logged ? state.logs[d - 1] : null;
-      const fill = logged ? "var(--accent)" : "var(--accent2)";
-      const op = logged ? 0.9 : 0.35;
       const attrs = `data-day="${d}"`
         + (lg ? ` data-date="${lg.date}" data-deficit="${lg.deficit}"` : "")
-        + ` data-kind="${kind}" data-w="${w.toFixed(1)}" data-target="${targetW.toFixed(1)}"`
+        + ` data-model="${mW.toFixed(1)}" data-target="${targetW.toFixed(1)}"`
+        + (sW !== null && !logged ? ` data-scale="${sW.toFixed(1)}"` : "")
         + (weighByDay[d] !== undefined ? ` data-actual="${weighByDay[d]}"` : "");
       dayPts += `<g class="cpt"><rect ${attrs} x="${X(d) - plotW / CONFIG.totalDays / 2}" y="${T}" width="${plotW / CONFIG.totalDays}" height="${plotH}" fill="transparent"/>
-        <circle cx="${X(d)}" cy="${Y(w)}" r="${logged ? 2.5 : 1.6}" fill="${fill}" opacity="${op}" pointer-events="none"/></g>`;
+        <circle cx="${X(d)}" cy="${Y(mW)}" r="${logged ? 2.5 : 1.6}" fill="var(--accent)" opacity="${logged ? 0.9 : 0.3}" pointer-events="none"/></g>`;
     }
-    const endLabel = `<text x="${X(CONFIG.totalDays) - 4}" y="${Y(targetEnd) - 6}" text-anchor="end" font-size="9" fill="var(--dim)" font-family="JetBrains Mono, monospace">goal ${targetEnd.toFixed(0)}</text>`;
+
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
         <div class="label" style="margin-bottom:0">Weight trajectory</div>
-        <div class="mono" style="font-size:12px;color:var(--dim)">est now ${estWeight.toFixed(1)} · proj d60 ${projEnd.toFixed(1)}</div>
+        <div class="mono" style="font-size:11px;color:var(--dim)">d60: <span style="color:var(--accent);font-weight:700">${daysLogged > 0 ? modelProjEnd.toFixed(1) : "—"}</span> model · <span style="color:var(--green);font-weight:700">${scaleProjEnd !== null ? scaleProjEnd.toFixed(1) : "—"}</span> scale</div>
       </div>
       <svg viewBox="0 0 ${CW} ${CH}" style="width:100%;height:auto;display:block">
-        ${grid}${ticks}${xticks}${targetLine}${estPath}${projLine}${actualLine}${dayPts}${dots}${startDot}${endLabel}
+        ${grid}${ticks}${xticks}${targetLine}${modelPath}${modelProjLine}${scalePath}${scaleProjLine}${dayPts}${dots}${startDot}${endLabels}
       </svg>
       <div class="cal-legend" style="margin-top:8px">
-        <span><div style="width:14px;height:2px;background:var(--accent)"></div>real weight</span>
-        <span><div style="width:14px;height:0;border-top:2px dotted var(--accent2)"></div>projected</span>
+        <span><div style="width:14px;height:2px;background:var(--accent)"></div>calorie model</span>
+        <span><div style="width:14px;height:2px;background:var(--green)"></div>scale (weigh-ins)</span>
+        <span><div style="width:14px;height:0;border-top:2px dotted var(--mu)"></div>projections</span>
         <span><div style="width:14px;height:0;border-top:2px dashed var(--bd2)"></div>target</span>
-        <span><div class="cal-dot" style="background:var(--green);width:7px;height:7px"></div>actual weigh-in</span>
       </div>
     </div>`;
   })();
@@ -2887,14 +2903,14 @@ document.addEventListener("mouseover", e => {
   const r = e.target.closest?.(".cpt rect") || (e.target.matches?.(".cpt rect") ? e.target : null);
   if (!r) return;
   const d = r.dataset;
-  const kindLabel = { est: "Est. weight", proj: "Projected", target: "On target" }[d.kind] || "Weight";
-  const kindColor = d.kind === "est" ? "var(--accent)" : d.kind === "proj" ? "var(--accent2)" : "var(--bd2)";
+  const isLogged = d.date !== undefined;
   const defNum = d.deficit !== undefined ? parseInt(d.deficit) : null;
   const defColor = defNum === null ? "" : defNum >= 1300 ? "#3D6B24" : defNum >= CONFIG.dailyTarget ? "var(--green)" : "#C4553B";
   chartTip.innerHTML = `
     <div class="tip-head">Day ${d.day}${d.date ? `<span class="tip-date">${d.date}</span>` : ""}</div>
     ${defNum !== null ? `<div class="tip-row"><span><span class="tip-dot" style="background:${defColor}"></span>Deficit</span><b style="color:${defColor}">${defNum >= 0 ? "−" : "+"}${Math.abs(defNum).toLocaleString()}</b></div>` : ""}
-    <div class="tip-row"><span><span class="tip-dot" style="background:${kindColor}"></span>${kindLabel}</span><b>${d.w} lbs</b></div>
+    ${d.model !== undefined ? `<div class="tip-row"><span><span class="tip-dot" style="background:var(--accent)"></span>${isLogged ? "Model" : "Model proj."}</span><b>${d.model} lbs</b></div>` : ""}
+    ${d.scale !== undefined ? `<div class="tip-row"><span><span class="tip-dot" style="background:var(--green)"></span>Scale proj.</span><b style="color:var(--green)">${d.scale} lbs</b></div>` : ""}
     <div class="tip-row"><span><span class="tip-dot" style="background:var(--bd2)"></span>Target path</span><b>${d.target} lbs</b></div>
     ${d.actual !== undefined ? `<div class="tip-row"><span><span class="tip-dot" style="background:var(--green)"></span>Weigh-in</span><b style="color:var(--green)">${d.actual} lbs</b></div>` : ""}`;
   chartTip.classList.add("show");
