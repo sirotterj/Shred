@@ -2590,18 +2590,27 @@ function render() {
     const modelNow = CONFIG.startWeight - td / 3500;
     const modelProjEnd = daysLogged > 0 ? CONFIG.startWeight - (avgPerDay * CONFIG.totalDays) / 3500 : targetEnd;
 
-    // ── Scale trend: least-squares through (day 0, start) + weigh-ins ──
+    // ── Scale trend: least-squares through (day 0, start) + weigh-ins,
+    //    blended toward the calorie model until enough data exists.
+    //    One early weigh-in must NOT extrapolate to absurdity: trust in the
+    //    raw regression scales with how many days of weigh-in data we have
+    //    (full trust at 21+ days), and the slope is clamped to sane bounds.
     const wPts = state.weighIns.map(x => [dayForDate(x.date), x.weight]);
-    let scaleSlope = null, scaleIntercept = null, scaleProjEnd = null;
+    const modelSlope = daysLogged > 0 ? -(avgPerDay / 3500) : (targetEnd - CONFIG.startWeight) / CONFIG.totalDays;
+    let scaleSlope = null, scaleProjEnd = null, scaleTrust = 0;
     if (wPts.length >= 1) {
       const rpts = [[0, CONFIG.startWeight], ...wPts];
       const n = rpts.length;
       const mx = rpts.reduce((s, p) => s + p[0], 0) / n;
       const my = rpts.reduce((s, p) => s + p[1], 0) / n;
       const den = rpts.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
-      scaleSlope = den > 0 ? rpts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / den : 0;
-      scaleIntercept = my - scaleSlope * mx;
-      scaleProjEnd = scaleIntercept + scaleSlope * CONFIG.totalDays;
+      let rawSlope = den > 0 ? rpts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / den : modelSlope;
+      rawSlope = Math.max(-0.6, Math.min(0.15, rawSlope)); // clamp BEFORE blending: one wild reading can't dominate
+      const spanDays = wPts[wPts.length - 1][0];
+      scaleTrust = Math.min(1, spanDays / 21);
+      scaleSlope = scaleTrust * rawSlope + (1 - scaleTrust) * modelSlope;
+      const [aDay, aW] = wPts[wPts.length - 1];
+      scaleProjEnd = aW + scaleSlope * (CONFIG.totalDays - aDay);
     }
 
     const actualW = state.weighIns.map(x => x.weight);
@@ -2648,10 +2657,17 @@ function render() {
     ).join("");
     const startDot = `<g class="cpt"><rect data-day="0" data-model="${CONFIG.startWeight.toFixed(1)}" data-target="${CONFIG.startWeight.toFixed(1)}" x="${X(0) - plotW / CONFIG.totalDays / 2}" y="${T}" width="${plotW / CONFIG.totalDays}" height="${plotH}" fill="transparent"/><circle cx="${X(0)}" cy="${Y(CONFIG.startWeight)}" r="3.5" fill="var(--tx)" stroke="var(--card)" stroke-width="1.5" pointer-events="none"/></g>`;
 
-    // day-60 endpoint labels for both projections
-    let endLabels = `<text x="${X(CONFIG.totalDays) - 4}" y="${Y(targetEnd) + (targetEnd > (scaleProjEnd ?? 999) ? -6 : 11)}" text-anchor="end" font-size="9" fill="var(--dim)" font-family="JetBrains Mono, monospace">goal ${targetEnd.toFixed(0)}</text>`;
-    if (daysLogged > 0) endLabels += `<text x="${X(CONFIG.totalDays) - 4}" y="${Y(modelProjEnd) - 6}" text-anchor="end" font-size="9" font-weight="700" fill="var(--accent)" font-family="JetBrains Mono, monospace">${modelProjEnd.toFixed(1)}</text>`;
-    if (scaleProjEnd !== null) endLabels += `<text x="${X(CONFIG.totalDays) - 4}" y="${Y(scaleProjEnd) + 12}" text-anchor="end" font-size="9" font-weight="700" fill="var(--green)" font-family="JetBrains Mono, monospace">${scaleProjEnd.toFixed(1)}</text>`;
+    // day-60 endpoint labels — nudged apart so they never overlap
+    const labelDefs = [{ y: Y(targetEnd), text: `goal ${targetEnd.toFixed(0)}`, fill: "var(--dim)", weight: "400" }];
+    if (daysLogged > 0) labelDefs.push({ y: Y(modelProjEnd), text: modelProjEnd.toFixed(1), fill: "var(--accent)", weight: "700" });
+    if (scaleProjEnd !== null) labelDefs.push({ y: Y(scaleProjEnd), text: scaleProjEnd.toFixed(1), fill: "var(--green)", weight: "700" });
+    labelDefs.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < labelDefs.length; i++) {
+      if (labelDefs[i].y - labelDefs[i - 1].y < 11) labelDefs[i].y = labelDefs[i - 1].y + 11;
+    }
+    const endLabels = labelDefs.map(ld =>
+      `<text x="${X(CONFIG.totalDays) - 4}" y="${Math.min(CH - B - 2, ld.y - 4)}" text-anchor="end" font-size="9" font-weight="${ld.weight}" fill="${ld.fill}" font-family="JetBrains Mono, monospace">${ld.text}</text>`
+    ).join("");
 
     // per-day hover points
     let dayPts = "";
@@ -2661,7 +2677,9 @@ function render() {
       const targetW = CONFIG.startWeight + (targetEnd - CONFIG.startWeight) * (d / CONFIG.totalDays);
       const logged = d <= daysLogged;
       const mW = logged ? modelPts[d][1] : (daysLogged > 0 ? modelNow - (avgPerDay * (d - daysLogged)) / 3500 : targetW);
-      const sW = scaleSlope !== null ? scaleIntercept + scaleSlope * d : null;
+      const sW = scaleSlope !== null && wPts.length
+        ? wPts[wPts.length - 1][1] + scaleSlope * (d - wPts[wPts.length - 1][0])
+        : null;
       const lg = logged ? state.logs[d - 1] : null;
       const attrs = `data-day="${d}"`
         + (lg ? ` data-date="${lg.date}" data-deficit="${lg.deficit}"` : "")
