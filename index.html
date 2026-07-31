@@ -2491,14 +2491,15 @@ function render() {
   const defSinceAnchor = state.logs.filter(l => l.day > anchorDay).reduce((s, l) => s + l.deficit, 0);
   const estWeight = anchorWeight - defSinceAnchor / 3500;
 
-  const lbsLostNum = CONFIG.startWeight - estWeight;
-  const lbsLost = lbsLostNum.toFixed(1);
-  const doneCal = lbsLostNum * 3500;
-  const pct = (doneCal / CONFIG.totalDeficit) * 100;
+  // Weight numbers are scale-anchored; the progress BAR is purely calorie-based
+  const lbsLost = (CONFIG.startWeight - estWeight).toFixed(1);
+  const pct = (td / CONFIG.totalDeficit) * 100;
   const pctClamped = Math.min(100, Math.max(0, pct));
   const overshoot = Math.max(0, pct - 100);
-  const remaining = Math.max(0, Math.round((estWeight - goalWeight) * 3500));
-  const dailyNeeded = daysLeft > 0 ? Math.round(remaining / daysLeft) : 0;
+  const remaining = Math.max(0, CONFIG.totalDeficit - td);
+  // Daily target stays scale-anchored (adapts to weigh-ins)
+  const remainingToGoal = Math.max(0, Math.round((estWeight - goalWeight) * 3500));
+  const dailyNeeded = daysLeft > 0 ? Math.round(remainingToGoal / daysLeft) : 0;
   // ahead/behind vs the target path line at today's position
   const targetToday = CONFIG.startWeight + (goalWeight - CONFIG.startWeight) * (daysLogged / CONFIG.totalDays);
   const diff = Math.round((targetToday - estWeight) * 3500);
