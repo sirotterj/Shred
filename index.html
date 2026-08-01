@@ -2497,12 +2497,9 @@ function render() {
   const pctClamped = Math.min(100, Math.max(0, pct));
   const overshoot = Math.max(0, pct - 100);
   const remaining = Math.max(0, CONFIG.totalDeficit - td);
-  // Daily target stays scale-anchored (adapts to weigh-ins)
-  const remainingToGoal = Math.max(0, Math.round((estWeight - goalWeight) * 3500));
-  const dailyNeeded = daysLeft > 0 ? Math.round(remainingToGoal / daysLeft) : 0;
-  // ahead/behind vs the target path line at today's position
-  const targetToday = CONFIG.startWeight + (goalWeight - CONFIG.startWeight) * (daysLogged / CONFIG.totalDays);
-  const diff = Math.round((targetToday - estWeight) * 3500);
+  // Daily target is pure calorie math: finish with 52,500 burned
+  const dailyNeeded = daysLeft > 0 ? Math.round(remaining / daysLeft) : 0;
+  const diff = td - daysLogged * CONFIG.dailyTarget;
   const ahead = diff >= 0;
   const dayPct = (daysLogged / CONFIG.totalDays) * 100;
   const avgPerDay = daysLogged > 0 ? td / daysLogged : 0;
@@ -2556,7 +2553,7 @@ function render() {
     <div class="card" style="padding:16px">
       <div class="label">Daily Target</div>
       <div class="mono" style="font-size:26px;font-weight:700;line-height:1">${dailyNeeded}<span style="font-size:13px;color:var(--dim);font-weight:500;margin-left:4px">cal</span></div>
-      <div style="font-size:12px;color:${aheadColor};margin-top:6px;font-weight:600">${ahead ? '↑' : '↓'} ${Math.abs(diff).toLocaleString()} cal ${ahead ? 'ahead of' : 'behind'} path</div>
+      <div style="font-size:12px;color:${aheadColor};margin-top:6px;font-weight:600">${ahead ? '↑' : '↓'} ${Math.abs(diff).toLocaleString()} cal ${ahead ? 'ahead of' : 'behind'} plan</div>
     </div>
   </div>`;
 
